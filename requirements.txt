@@ -1,0 +1,14 @@
+fastapi==0.141.1
+uvicorn==0.53.0
+websockets==16.1.1
+python-multipart==0.0.32
+numpy==2.5.3
+scipy==1.18.1
+pillow==12.3.0
+torch==2.8.0
+torchvision==0.23.0
+ultralytics==8.4.153
+opencv-python==4.14.0.94
+lap==0.5.13
+httpx==0.28.1
+pytest==9.1.1
