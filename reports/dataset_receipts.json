@@ -1,0 +1,17 @@
+{
+  "shanghaitech": {
+    "source": "https://github.com/desenzhou/ShanghaiTechDataset",
+    "bytes": 174398901,
+    "sha256": "95b7a7f3d927f756393005b98f77847ce40dcb8546e2f46d20f0e0d425dac403",
+    "retrieved_utc": "2026-09-16T15:46:34Z",
+    "used_subset": "Part B only: 400 training images and 316 test images"
+  },
+  "umn_demo": {
+    "source": "https://mha.cs.umn.edu/proj_events.shtml",
+    "download_url": "https://mha.cs.umn.edu/Movies/Crowd-Activity-All.avi",
+    "bytes": 24821310,
+    "sha256": "9ca315dc099a98ada2fb5b34138f354768ff3fed440f7c18bf81c7759668def7",
+    "retrieved_utc": "2026-09-16T15:46:24Z",
+    "use": "Academic demonstration and pseudo-count forecasting; not labelled incident ground truth"
+  }
+}

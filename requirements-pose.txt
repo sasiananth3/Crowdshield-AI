@@ -1,0 +1,2 @@
+# Optional body-landmark extraction. Install after requirements.txt.
+mediapipe==1.0.1

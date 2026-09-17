@@ -1,0 +1,30 @@
+{
+  "metadata": {
+    "window": 8,
+    "horizon": 3,
+    "mean": 11.323694229125977,
+    "std": 4.178913593292236,
+    "source": "YOLOv8n pseudo-counts from UMN demo; NOT independent crowd-risk ground truth",
+    "sample_rate_hz": 1
+  },
+  "train_windows": 134,
+  "validation_windows": 42,
+  "test_windows": 42,
+  "validation_best_mae": 3.307581901550293,
+  "lstm_test": {
+    "mae": 4.43393611907959,
+    "rmse": 4.987546443939209
+  },
+  "persistence_baseline_test": {
+    "mae": 3.6666667461395264,
+    "rmse": 5.380741596221924
+  },
+  "split": "Chronological 60/20/20 before windowing; scene-cut windows excluded",
+  "epochs": 100,
+  "limitations": [
+    "One demonstration video, not external validation",
+    "Predicted count targets are detector pseudo-labels",
+    "No incident labels or warning-lead-time validation",
+    "Performance may be worse than persistence"
+  ]
+}
