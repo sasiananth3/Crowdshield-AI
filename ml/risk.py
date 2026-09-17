@@ -5,7 +5,7 @@ import math
 TIERS = [(80, "Critical"), (60, "High"), (35, "Moderate"), (0, "Safe")]
 
 
-def assess(count, capacity, motion, forecast):
+def assess(count, capacity, motion, forecast, density_count=None, pose=None):
     if not capacity or capacity <= 0:
         return {
             "score": None,
@@ -14,16 +14,23 @@ def assess(count, capacity, motion, forecast):
                 "Set a zone reference capacity to enable the experimental score"
             ],
             "action": "Review camera coverage and configure the zone.",
-            "method": "heuristic_v1",
+            "method": "late_fusion_v2",
         }
-    occupancy = max(0.0, count / capacity)
+    occupancy_count = density_count if density_count is not None else count
+    occupancy = max(0.0, occupancy_count / capacity)
     density_score = min(1.0, occupancy)
     reversal = motion.get("reversal_fraction") or 0.0
     sudden = motion.get("sudden_motion_fraction") or 0.0
     stalled = motion.get("stalled_fraction") or 0.0
-    motion_score = min(
+    trajectory_score = min(
         1.0, 0.6 * reversal + 0.3 * sudden + 0.1 * stalled * min(occupancy, 1)
     )
+    pose = pose or {}
+    pose_score = None
+    if pose.get("temporal_available"):
+        pose_score = min(1.0, 0.45 * (pose.get("reversal_fraction") or 0) + 0.35 * (pose.get("abrupt_motion_fraction") or 0) + 0.1 * (pose.get("stalled_fraction") or 0) * min(occupancy, 1) + 0.1 * (pose.get("leaning_fraction") or 0))
+    pose_weight = 0.5 * min(1.0, pose.get("coverage", 0)) if pose_score is not None else 0.0
+    motion_score = (1 - pose_weight) * trajectory_score + pose_weight * (pose_score or 0)
     future = forecast.get("count")
     growth = max(0.0, (future - count) / capacity) if future is not None else 0.0
     score = round(
@@ -31,7 +38,7 @@ def assess(count, capacity, motion, forecast):
     )
     tier = next(label for threshold, label in TIERS if score >= threshold)
     reasons = [
-        f"Observed count is {round(100 * occupancy)}% of the configured reference capacity"
+        f"{'CNN estimated' if density_count is not None else 'Detected'} count is {round(100 * occupancy)}% of the configured reference capacity"
     ]
     if reversal > 0.2:
         reasons.append("Direction reversals observed in tracked trajectories")
@@ -41,6 +48,10 @@ def assess(count, capacity, motion, forecast):
         reasons.append("Low movement with elevated occupancy")
     if growth > 0.1:
         reasons.append("Count forecast is rising")
+    if pose_score is not None and pose_score > 0.2:
+        reasons.append("Body-landmark motion rules contribute to the kinematic score")
+    if density_count is None:
+        reasons.append("Density CNN unavailable; using detector occupancy")
     action = "Continue observation; this status is not a safety guarantee."
     if tier in {"High", "Critical"}:
         action = "Ask the responsible operator to review this zone and follow the venue's approved crowd-management plan."
@@ -51,7 +62,11 @@ def assess(count, capacity, motion, forecast):
         "tier": tier,
         "reasons": reasons,
         "action": action,
-        "method": "heuristic_v1",
+        "method": "late_fusion_v2",
+        "components": {"density": round(70 * density_score, 2), "kinematics": round(20 * motion_score, 2), "forecast": round(10 * min(1.0, growth), 2)},
+        "weights": {"density": 0.7, "kinematics": 0.2, "forecast": 0.1},
+        "density_source": "cnn" if density_count is not None else "detector_fallback",
+        "pose_weight_within_kinematics": round(pose_weight, 3),
         "is_probability": False,
         "validated_for_safety": False,
     }

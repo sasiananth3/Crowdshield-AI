@@ -15,6 +15,7 @@ class Store:
             CREATE TABLE IF NOT EXISTS jobs (id TEXT PRIMARY KEY, data TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS samples (id INTEGER PRIMARY KEY, job_id TEXT, timestamp REAL, data TEXT);
             CREATE TABLE IF NOT EXISTS alerts (id TEXT PRIMARY KEY, job_id TEXT, data TEXT, acknowledged INTEGER DEFAULT 0);
+            CREATE INDEX IF NOT EXISTS samples_job_time ON samples(job_id, timestamp);
         """)
         self.db.commit()
 
@@ -39,13 +40,13 @@ class Store:
                 (job_id, sample["timestamp"], json.dumps(sample)),
             )
 
-    def history(self, job_id):
+    def history(self, job_id, limit=600):
         with self.lock:
             rows = self.db.execute(
-                "SELECT data FROM samples WHERE job_id=? ORDER BY timestamp LIMIT 10000",
-                (job_id,),
+                "SELECT data FROM samples WHERE job_id=? ORDER BY timestamp DESC LIMIT ?",
+                (job_id, -1 if limit is None else limit),
             ).fetchall()
-        return [json.loads(row[0]) for row in rows]
+        return [json.loads(row[0]) for row in reversed(rows)]
 
     def add_alert(self, alert):
         with self.lock, self.db:

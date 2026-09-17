@@ -10,6 +10,21 @@ from torch import nn
 from torchvision.models import mobilenet_v2, MobileNet_V2_Weights
 
 
+def integrate_zone(density_map, polygon, subpixels=8):
+    """Integrate image-space count mass, with fractional cell coverage."""
+    h, w = density_map.shape
+    yy, xx = np.mgrid[:h * subpixels, :w * subpixels]
+    x, y = (xx + 0.5) / (w * subpixels), (yy + 0.5) / (h * subpixels)
+    inside = np.zeros(x.shape, dtype=bool)
+    for a, b in zip(polygon, polygon[1:] + polygon[:1]):
+        if a[1] != b[1]:
+            crossing = (a[1] > y) != (b[1] > y)
+            boundary = (b[0] - a[0]) * (y - a[1]) / (b[1] - a[1]) + a[0]
+            inside ^= crossing & (x < boundary)
+    coverage = inside.reshape(h, subpixels, w, subpixels).mean(axis=(1, 3))
+    return float((density_map * coverage).sum())
+
+
 class DensityNet(nn.Module):
     def __init__(self, pretrained=False):
         super().__init__()

@@ -24,6 +24,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from backend.app.store import Store
 from backend.app.worker import Manager
+from ml.pose import pose_capability
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -82,7 +83,7 @@ def create_app(runtime=None):
         await asyncio.to_thread(manager.shutdown)
         store.close()
 
-    app = FastAPI(title="CrowdShield AI", version="0.1.0", lifespan=lifespan)
+    app = FastAPI(title="CrowdShield AI", version="0.2.0", lifespan=lifespan)
     app.state.manager = manager
     app.state.store = store
     app.add_middleware(
@@ -136,13 +137,14 @@ def create_app(runtime=None):
                 "pose": (ROOT / "models/pose_landmarker_lite.task").exists(),
             },
             "demo_available": (ROOT / "data/raw/umn-demo.avi").exists(),
+            "pose_runtime": pose_capability(str(ROOT / "models/pose_landmarker_lite.task")),
             "disclaimer": "Experimental decision support. Not validated for public-safety use.",
         }
 
     @app.get("/api/evaluation")
     def evaluation():
         output = {}
-        for name in ["density", "forecast"]:
+        for name in ["density", "forecast", "comparison"]:
             path = ROOT / f"reports/{name}_evaluation.json"
             output[name] = json.loads(path.read_text()) if path.exists() else None
         return output
@@ -189,6 +191,34 @@ def create_app(runtime=None):
     def jobs():
         with manager.lock:
             return [manager.public(j) for j in reversed(list(manager.jobs.values()))]
+
+    @app.post("/api/cameras", status_code=201)
+    def camera():
+        return manager.create_camera()
+
+    @app.post("/api/jobs/{job_id}/live-frame", status_code=202)
+    async def live_frame(job_id: str, file: UploadFile = File(...)):
+        require_job(job_id)
+        try:
+            data = await file.read(2 * 1024 * 1024 + 1)
+            if len(data) > 2 * 1024 * 1024:
+                raise HTTPException(413, "Webcam frame exceeds 2 MB")
+            from PIL import Image, UnidentifiedImageError
+            import numpy as np
+            try:
+                with Image.open(io.BytesIO(data)) as image:
+                    if image.format != "JPEG" or image.width * image.height > 1920 * 1080:
+                        raise HTTPException(422, "Use a JPEG webcam frame no larger than 1080p")
+                    frame = np.ascontiguousarray(np.asarray(image.convert("RGB"))[:, :, ::-1])
+            except (UnidentifiedImageError, OSError, Image.DecompressionBombError):
+                raise HTTPException(422, "Invalid webcam image")
+            try:
+                await asyncio.to_thread(manager.submit_frame, job_id, frame)
+            except ValueError as exc:
+                raise HTTPException(409, str(exc))
+            return {"accepted": True}
+        finally:
+            await file.close()
 
     @app.get("/api/jobs/{job_id}")
     def job(job_id: str):
@@ -257,9 +287,10 @@ def create_app(runtime=None):
                 "risk_tier",
                 "forecast_count",
                 "forecast_method",
+                "zone_density_estimate", "density_component", "kinematics_component", "forecast_component", "pose_coverage",
             ]
         )
-        for sample in store.history(job_id):
+        for sample in store.history(job_id, limit=None):
             for zone in sample["zones"]:
                 # Mitigate spreadsheet formula injection in user-provided zone names.
                 name = zone["name"]
@@ -276,6 +307,11 @@ def create_app(runtime=None):
                         zone["risk"]["tier"],
                         zone["forecast"]["count"],
                         zone["forecast"]["method"],
+                        zone.get("density_estimate"),
+                        zone["risk"].get("components", {}).get("density"),
+                        zone["risk"].get("components", {}).get("kinematics"),
+                        zone["risk"].get("components", {}).get("forecast"),
+                        zone.get("pose", {}).get("coverage"),
                     ]
                 )
         return Response(
