@@ -22,6 +22,10 @@ weights, fonts or dependencies. Review original terms before reuse/distribution.
 - React, Vite, FastAPI, PyTorch, OpenCV and lucide-react: retain their upstream
   notices and observe their licenses. No external font/image service is required
   by the dashboard during normal use.
+- OpenClaw and OpenRouter are optional external services for candidate-alert
+  verification. They are not bundled by this repository. Review their current
+  software, model-provider, privacy, retention and rate-limit terms before sending
+  footage. The OpenRouter free router may select different upstream models.
 
 Model and dataset checksums document the exact development artifacts; they do
 not certify that a dataset is appropriate or that a model is safe for deployment.

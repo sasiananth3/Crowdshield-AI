@@ -45,6 +45,44 @@ downloads official YOLOv8 weights and the UMN demonstration video, builds the
 dashboard, and runs unit/API tests. The trained density and count-LSTM checkpoints
 are included, so **retraining is not required to demonstrate the project**.
 
+### Optional OpenClaw alert verifier
+
+OpenClaw can provide a second opinion only after the local risk engine has produced
+a persistent candidate warning. It receives up to three recent frames with the
+reviewed zone outlined, plus counts, motion features, forecast and rule reasons.
+It cannot change the risk tier. A clear rejection at 85% confidence or higher
+suppresses the popup; an inconclusive, malformed, timed-out or failed review keeps
+the original warning. Every requested review, including a rejection, is retained
+in the `alert_verifications` audit table.
+
+This feature is opt-in because frames leave the computer and are processed by
+OpenRouter and the selected free-model provider. Install OpenClaw separately (its
+current releases require Node.js 24.16+ or 26.1+; Node 26 is recommended), then
+configure an OpenRouter key:
+
+```powershell
+iwr -useb https://openclaw.ai/install.ps1 | iex
+openclaw models auth login --provider openrouter --method api-key
+openclaw infer model run --local --model openrouter/openrouter/free --prompt "Reply with exactly OK" --json
+```
+
+Restart CrowdShield after installation, then select **OpenClaw alert
+verification** before starting an analysis. The default OpenClaw model reference
+is `openrouter/openrouter/free`, which selects OpenRouter's free-model router. The
+following optional environment settings are read when CrowdShield starts:
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `CROWDSHIELD_OPENCLAW_MODEL` | `openrouter/openrouter/free` | OpenClaw provider/model reference |
+| `CROWDSHIELD_OPENCLAW_TIMEOUT_SECONDS` | `45` | Per-candidate review timeout (5-180 seconds) |
+| `CROWDSHIELD_OPENCLAW_REJECT_CONFIDENCE` | `0.85` | Minimum confidence required to suppress a popup (0.5-1.0) |
+| `CROWDSHIELD_OPENCLAW_COMMAND` | discovered from `PATH` | Optional explicit OpenClaw executable path |
+
+The free router may choose different underlying vision-capable models across
+requests, so its decisions are not deterministic. This second opinion has not
+been shown to improve accuracy; that requires labelled incident/non-incident
+evaluation. It must not replace operator review.
+
 Optional body landmarks:
 
 ```bat
@@ -83,7 +121,7 @@ that the footage is dangerous.
 | Lightweight density estimation | ImageNet MobileNetV2 frozen features plus a trained dilated-convolution head |
 | Behavioral signals | Track-local speed, stalling, direction reversals and short-window rapid-dispersal heuristics; optional body-only MediaPipe landmarks |
 | Temporal model | Trained 8-sample-input / 3-second-horizon count LSTM, with persistence and linear baselines |
-| Fusion and warnings | Explicit occupancy/motion/forecast heuristic, four tiers, persistence and cooldown filters |
+| Fusion and warnings | Explicit occupancy/motion/forecast heuristic, four tiers, persistence and cooldown filters; optional OpenClaw/OpenRouter second opinion |
 | Backend and storage | FastAPI REST/WebSocket API, a bounded CPU worker, SQLite analyses and acknowledged alerts |
 | Dashboard | Video upload, overlays, zones, trends, warnings, results, provenance and CSV export |
 
@@ -172,11 +210,13 @@ flowchart TD
     D --> P[Optional body landmarks]
     D --> K[Zone counts and kinematics]
     K --> L[Count forecast]
-    K --> R[Heuristic risk and alerts]
+    K --> R[Heuristic risk candidates]
     L --> R
+    R --> O[Optional OpenClaw verification]
+    O --> A
+    R --> A
     C --> A[FastAPI and SQLite]
     P --> A
-    R --> A
     A --> U[React dashboard]
 ```
 
@@ -188,7 +228,8 @@ Main endpoints: `POST /api/videos`, `POST /api/demo`, `GET /api/jobs`,
 `POST /api/jobs/{id}/start`, `POST /api/jobs/{id}/stop`,
 `GET /api/jobs/{id}/history`, `GET /api/jobs/{id}/frame`,
 `GET /api/jobs/{id}/export`, `GET /api/alerts`,
-`POST /api/alerts/{id}/acknowledge`, `GET /api/evaluation`,
+`POST /api/alerts/{id}/acknowledge`, `GET /api/alert-verifications`,
+`GET /api/evaluation`,
 and `WS /ws/jobs/{id}`. See `/docs` for request schemas and normalized polygons.
 
 ## Testing and development
@@ -229,7 +270,10 @@ can produce a Moderate warning. The `Safe` tier is only a heuristic label.
 No identity embeddings or face-emotion inference are implemented. Original video
 and rendered frames can still contain identifiable faces; they are **not blurred
 or anonymized**. Uploads, frames, trajectories, counts and alerts stay in the local
-`runtime/` folder; there is no automatic retention/deletion policy. Only process
+`runtime/` folder unless the operator explicitly enables OpenClaw verification.
+When enabled, up to three candidate frames are sent through OpenClaw to OpenRouter
+and its selected upstream provider; read their current privacy and retention terms
+before use. There is no automatic local retention/deletion policy. Only process
 authorized footage. Never commit `runtime/` or publish raw data accidentally.
 
 Before claiming improved accuracy: reproduce an appropriate paper baseline on the

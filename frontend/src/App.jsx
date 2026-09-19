@@ -36,6 +36,19 @@ const stamp = (seconds) =>
     .padStart(2, "0")}`;
 const recordedAt = (value) =>
   value ? new Date(value).toLocaleString() : "Recorded time unavailable";
+const verificationNote = (alert) => {
+  const verification = alert.verification;
+  if (verification?.status === "confirmed") {
+    return `OpenClaw verified (${Math.round(Number(verification.confidence || 0) * 100)}% confidence) - operator review required`;
+  }
+  if (verification?.status === "inconclusive") {
+    return "OpenClaw review inconclusive - rule-based warning retained";
+  }
+  if (verification?.status === "unavailable") {
+    return "OpenClaw unavailable - rule-based warning retained";
+  }
+  return "Experimental warning - operator review required";
+};
 async function api(path, options = {}) {
   const response = await fetch(path, options);
   if (!response.ok) {
@@ -142,7 +155,8 @@ export default function App() {
   const [layout, setLayout] = useState("full"),
     [pose, setPose] = useState(false),
     [heatmap, setHeatmap] = useState(false),
-    [forecastMode, setForecastMode] = useState("persistence");
+    [forecastMode, setForecastMode] = useState("persistence"),
+    [verifyAlerts, setVerifyAlerts] = useState(false);
   const [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
     [connected, setConnected] = useState(false),
@@ -361,6 +375,7 @@ export default function App() {
           enable_pose: pose,
           sample_fps: 2,
           forecast_mode: forecastMode,
+          verify_alerts: verifyAlerts,
         }),
       );
     });
@@ -755,6 +770,22 @@ export default function App() {
                     <p className="field-help">
                       Landmarks are experimental; falling and pushing are not
                       classified.
+                    </p>
+                    <label className="checkbox-label">
+                      <input
+                        type="checkbox"
+                        checked={verifyAlerts}
+                        disabled={
+                          running || !health?.alert_verifier?.available
+                        }
+                        onChange={(e) => setVerifyAlerts(e.target.checked)}
+                      />
+                      OpenClaw alert verification <span>Optional</span>
+                    </label>
+                    <p className="field-help">
+                      {health?.alert_verifier?.available
+                        ? "Reviews only debounced warning candidates. Up to three marked video frames are sent to the configured OpenRouter model. Provider failures retain the original warning."
+                        : "OpenClaw CLI is not detected. Install and configure it, then restart CrowdShield to enable external verification."}
                     </p>
                     {running ? (
                       <button
@@ -1204,7 +1235,8 @@ function AlertPopup({
         </div>
         <div>
           <span>Abnormal condition warning</span>
-          <strong>{alert.zone}</strong>
+          <strong>{alert.alert_type || "Crowd condition warning"}</strong>
+          <small className="alert-popup-zone">{alert.zone}</small>
         </div>
         <Badge value={alert.tier} />
         <button
@@ -1236,7 +1268,7 @@ function AlertPopup({
         </button>
       </div>
       <div className="alert-popup-note">
-        Experimental warning - operator review required
+        {verificationNote(alert)}
       </div>
     </aside>
   );
@@ -1252,9 +1284,10 @@ function AlertList({ alerts, onAck }) {
           </div>
           <div className="alert-copy">
             <strong>
-              {a.zone}
+              {a.alert_type || a.zone}
               <Badge value={a.tier} />
             </strong>
+            {a.alert_type ? <small>{a.zone}</small> : null}
             <p>{a.reasons?.join(" · ")}</p>
             <small>{a.action}</small>
           </div>

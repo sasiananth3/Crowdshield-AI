@@ -14,6 +14,11 @@ const alert = {
   video_timestamp: 18.5,
   score: 86,
   tier: "Critical",
+  alert_type: "Crowding / capacity",
+  verification: {
+    status: "confirmed",
+    confidence: 0.93,
+  },
   reasons: ["Observed count exceeds the configured reference capacity"],
   action: "Ask the responsible operator to review this zone.",
   acknowledged: false,
@@ -77,6 +82,8 @@ try {
   await popup.getByText("Abnormal condition warning", { exact: true }).waitFor();
   assert.match(await popup.innerText(), /Main concourse/);
   assert.match(await popup.innerText(), /Critical/i);
+  assert.match(await popup.innerText(), /Crowding \/ capacity/);
+  assert.match(await popup.innerText(), /OpenClaw verified/);
   assert.match(
     await popup.innerText(),
     /Observed count exceeds the configured reference capacity/,

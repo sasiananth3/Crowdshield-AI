@@ -911,6 +911,15 @@ select {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.alert-popup-heading .alert-popup-zone {
+  display: block;
+  margin-top: 2px;
+  color: #7d8da2;
+  font-size: 10px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .alert-popup-close {
   border: 0;
   background: transparent;

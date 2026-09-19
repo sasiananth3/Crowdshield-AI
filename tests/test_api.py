@@ -26,6 +26,7 @@ def test_health(client):
     response = client.get("/api/health")
     assert response.status_code == 200
     assert response.json()["mode"] == "local_research_prototype"
+    assert response.json()["alert_verifier"]["mode"] == "opt_in"
 
 
 def test_invalid_uploads_are_rejected(client):
@@ -92,6 +93,35 @@ def test_alerts_persist_and_acknowledge(tmp_path):
     second = Store(path)
     assert second.alerts()[0]["acknowledged"]
     second.close()
+
+
+def test_alert_verification_audit_persists(tmp_path):
+    path = tmp_path / "test.sqlite3"
+    store = Store(path)
+    store.add_alert_verification(
+        {
+            "id": "review-a",
+            "job_id": "job-a",
+            "verification": {"status": "rejected"},
+        }
+    )
+    store.close()
+    second = Store(path)
+    assert second.alert_verifications("job-a")[0]["verification"]["status"] == "rejected"
+    second.close()
+
+
+def test_alert_verification_audit_endpoint(client):
+    client.app.state.store.add_alert_verification(
+        {
+            "id": "review-api",
+            "job_id": "job-api",
+            "verification": {"status": "confirmed"},
+        }
+    )
+    response = client.get("/api/alert-verifications?job_id=job-api")
+    assert response.status_code == 200
+    assert response.json()[0]["id"] == "review-api"
 
 
 def test_websocket_missing_job(client):

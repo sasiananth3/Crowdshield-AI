@@ -61,6 +61,7 @@ class StartRequest(BaseModel):
     enable_pose: bool = False
     sample_fps: float = Field(default=2, ge=0.5, le=5, allow_inf_nan=False)
     forecast_mode: Literal["persistence", "linear", "lstm"] = "persistence"
+    verify_alerts: bool = False
 
     @field_validator("zones")
     @classmethod
@@ -135,6 +136,7 @@ def create_app(runtime=None):
                 "forecast": (ROOT / "models/forecast.pt").exists(),
                 "pose": (ROOT / "models/pose_landmarker_lite.task").exists(),
             },
+            "alert_verifier": manager.alert_verifier.health(),
             "demo_available": (ROOT / "data/raw/umn-demo.avi").exists(),
             "disclaimer": "Experimental decision support. Not validated for public-safety use.",
         }
@@ -204,6 +206,7 @@ def create_app(runtime=None):
                 body.enable_pose,
                 body.sample_fps,
                 body.forecast_mode,
+                body.verify_alerts,
             )
         except ValueError as exc:
             raise HTTPException(409, str(exc))
@@ -239,6 +242,10 @@ def create_app(runtime=None):
         if not store.acknowledge(alert_id):
             raise HTTPException(404, "Alert not found")
         return {"acknowledged": True}
+
+    @app.get("/api/alert-verifications")
+    def alert_verifications(job_id: str | None = None):
+        return store.alert_verifications(job_id)
 
     @app.get("/api/jobs/{job_id}/export")
     def export(job_id: str):

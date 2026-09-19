@@ -15,6 +15,7 @@ class Store:
             CREATE TABLE IF NOT EXISTS jobs (id TEXT PRIMARY KEY, data TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS samples (id INTEGER PRIMARY KEY, job_id TEXT, timestamp REAL, data TEXT);
             CREATE TABLE IF NOT EXISTS alerts (id TEXT PRIMARY KEY, job_id TEXT, data TEXT, acknowledged INTEGER DEFAULT 0);
+            CREATE TABLE IF NOT EXISTS alert_verifications (id TEXT PRIMARY KEY, job_id TEXT, data TEXT NOT NULL);
         """)
         self.db.commit()
 
@@ -75,6 +76,30 @@ class Store:
                 ).rowcount
                 > 0
             )
+
+    def add_alert_verification(self, verification):
+        with self.lock, self.db:
+            self.db.execute(
+                "INSERT OR REPLACE INTO alert_verifications(id,job_id,data) VALUES (?,?,?)",
+                (
+                    verification["id"],
+                    verification["job_id"],
+                    json.dumps(verification),
+                ),
+            )
+
+    def alert_verifications(self, job_id=None):
+        with self.lock:
+            if job_id:
+                rows = self.db.execute(
+                    "SELECT data FROM alert_verifications WHERE job_id=? ORDER BY rowid DESC LIMIT 200",
+                    (job_id,),
+                ).fetchall()
+            else:
+                rows = self.db.execute(
+                    "SELECT data FROM alert_verifications ORDER BY rowid DESC LIMIT 200"
+                ).fetchall()
+        return [json.loads(row[0]) for row in rows]
 
     def close(self):
         with self.lock:

@@ -1,5 +1,6 @@
 """Bounded single-video worker. CPU inference stays off the HTTP event loop."""
 
+from collections import deque
 import copy
 from datetime import datetime, timezone
 import json
@@ -16,6 +17,7 @@ from ml.forecast import create_forecaster
 from ml.kinematics import MotionAnalyzer
 from ml.pose import PoseAnalyzer
 from ml.risk import AlertDebouncer, assess
+from ml.alert_verifier import OpenClawAlertVerifier, infer_alert_type
 
 
 logger = logging.getLogger(__name__)
@@ -32,6 +34,7 @@ def within(point, polygon):
 class Manager:
     def __init__(self, root, runtime, store):
         self.root, self.runtime, self.store = Path(root), Path(runtime), store
+        self.alert_verifier = OpenClawAlertVerifier()
         self.lock = threading.RLock()
         self.jobs = {job["id"]: job for job in store.jobs()}
         self.threads = {}
@@ -121,7 +124,13 @@ class Manager:
                 time.sleep(min(0.01 * (2**attempt), 0.2))
 
     def start(
-        self, job_id, zones, enable_pose, sample_fps, forecast_mode="persistence"
+        self,
+        job_id,
+        zones,
+        enable_pose,
+        sample_fps,
+        forecast_mode="persistence",
+        verify_alerts=False,
     ):
         with self.lock:
             if any(
@@ -144,12 +153,17 @@ class Manager:
                 and not (self.root / "models/forecast.pt").exists()
             ):
                 raise ValueError("LSTM checkpoint missing; train or install it first")
+            if verify_alerts and not self.alert_verifier.available:
+                raise ValueError(
+                    "OpenClaw CLI was not found. Install and configure OpenClaw before enabling alert verification."
+                )
             job.update(
                 status="processing",
                 zones=zones,
                 enable_pose=enable_pose,
                 sample_fps=sample_fps,
                 forecast_mode=forecast_mode,
+                verify_alerts=verify_alerts,
             )
             self.stops[job_id] = threading.Event()
             self.store.save_job(job)
@@ -204,6 +218,7 @@ class Manager:
             started = time.perf_counter()
             folder = self.runtime / "jobs" / job_id
             previous_hist = None
+            recent_frames = deque(maxlen=3)
             while not self.stops[job_id].is_set():
                 ok, frame = cap.read()
                 if not ok:
@@ -232,7 +247,9 @@ class Manager:
                         for z in job["zones"]
                     }
                     debouncer = AlertDebouncer()
+                    recent_frames.clear()
                 previous_hist = hist
+                recent_frames.append((timestamp, frame.copy()))
                 detections = detector.detect(frame)
                 global_motion = motion.update(detections, timestamp)
                 estimated = density.predict(frame)
@@ -276,23 +293,104 @@ class Manager:
                     }
                     zone_results.append(entry)
                     if debouncer.update(zone["id"], timestamp, risk):
+                        alert_id = uuid.uuid4().hex
+                        evidence = {
+                            **entry,
+                            "risk": risk,
+                            "frame_timestamps": [
+                                round(frame_timestamp, 3)
+                                for frame_timestamp, _ in recent_frames
+                            ],
+                        }
+                        alert_type = infer_alert_type(evidence)
+                        verification = {
+                            "reviewer": "rule_engine",
+                            "status": "not_requested",
+                            "decision": "not_requested",
+                            "display_alert": True,
+                            "alert_type": alert_type,
+                            "confidence": None,
+                            "summary": "OpenClaw verification was not enabled for this analysis.",
+                            "provider": None,
+                            "model": None,
+                            "latency_ms": 0,
+                        }
+                        if job.get("verify_alerts"):
+                            evidence_paths = []
+                            try:
+                                for index, (_, evidence_frame) in enumerate(
+                                    recent_frames
+                                ):
+                                    marked = evidence_frame.copy()
+                                    frame_height, frame_width = marked.shape[:2]
+                                    zone_points = (
+                                        np.array(zone["polygon"])
+                                        * np.array([frame_width, frame_height])
+                                    ).astype(np.int32)
+                                    cv2.polylines(
+                                        marked,
+                                        [zone_points],
+                                        True,
+                                        (0, 215, 255),
+                                        3,
+                                    )
+                                    evidence_path = (
+                                        folder
+                                        / f".openclaw-review-{alert_id}-{index}.jpg"
+                                    )
+                                    if cv2.imwrite(str(evidence_path), marked):
+                                        evidence_paths.append(evidence_path)
+                                verification = self.alert_verifier.verify(
+                                    evidence, evidence_paths
+                                )
+                                alert_type = verification["alert_type"]
+                            finally:
+                                for evidence_path in evidence_paths:
+                                    evidence_path.unlink(missing_ok=True)
                         alert = {
-                            "id": uuid.uuid4().hex,
+                            "id": alert_id,
                             "job_id": job_id,
                             "zone": zone["name"],
                             "created_at": utcnow(),
                             "video_timestamp": round(timestamp, 2),
+                            "alert_type": alert_type,
+                            "verification": verification,
                             **risk,
                         }
-                        self.store.add_alert(alert)
-                        logger.warning(
-                            "alert_emitted job_id=%s zone_id=%s tier=%s video_timestamp=%.2f reasons=%s",
-                            job_id,
-                            zone["id"],
-                            risk["tier"],
-                            timestamp,
-                            risk.get("reasons"),
-                        )
+                        if job.get("verify_alerts"):
+                            self.store.add_alert_verification(
+                                {
+                                    "id": alert_id,
+                                    "job_id": job_id,
+                                    "zone": zone["name"],
+                                    "created_at": alert["created_at"],
+                                    "video_timestamp": alert["video_timestamp"],
+                                    "candidate_tier": risk["tier"],
+                                    "candidate_reasons": risk.get("reasons", []),
+                                    "verification": verification,
+                                }
+                            )
+                        if verification["display_alert"]:
+                            self.store.add_alert(alert)
+                            logger.warning(
+                                "alert_emitted job_id=%s zone_id=%s tier=%s type=%s verification=%s video_timestamp=%.2f reasons=%s",
+                                job_id,
+                                zone["id"],
+                                risk["tier"],
+                                alert_type,
+                                verification["status"],
+                                timestamp,
+                                risk.get("reasons"),
+                            )
+                        else:
+                            logger.info(
+                                "alert_suppressed job_id=%s zone_id=%s type=%s confidence=%s video_timestamp=%.2f",
+                                job_id,
+                                zone["id"],
+                                alert_type,
+                                verification.get("confidence"),
+                                timestamp,
+                            )
                 # Do not sum detector and density estimates: they count the same people.
                 sample = {
                     "timestamp": round(timestamp, 3),

@@ -11,6 +11,8 @@ code or independently verified experimental record of the original papers.
 - A custom density head trained on real point annotations returns a count and map.
 - A trained LSTM forecasts count pseudo-labels, with explicit baseline alternatives.
 - The API worker publishes real results to a dashboard, with persisted alerts and CSV.
+- An optional OpenClaw/OpenRouter review can label and challenge persistent alert
+  candidates while preserving an audit record and failing open on provider errors.
 - Missing optional modules report their state; no random predictions fill the UI.
 
 The current contribution is a reproducible **integrated software prototype**.
@@ -100,6 +102,11 @@ not ground truth, and the LSTM's higher MAE must not be hidden.
    Include uncertainty intervals, occlusion levels and low-light/domain-shift tests.
 7. Report median/p95 end-to-end latency and throughput on the actual target laptop.
    A sampled-frame timing from this development runtime is not a laptop guarantee.
+8. Evaluate the alert pipeline with and without the OpenClaw verifier on the same
+   labelled videos. Report rejected true incidents, retained false alarms,
+   precision/recall, false alerts per hour, model/provider identity and latency.
+   Do not describe the verifier as an accuracy improvement until this ablation is
+   complete. OpenRouter's free router can select different models between calls.
 
 ## Known implementation limits
 
@@ -113,3 +120,6 @@ Jobs interrupted by restart remain marked interrupted and need a fresh upload.
 Only a bounded recent history is served by the API; see the storage implementation.
 No trained action recognition, camera calibration, webcam/RTSP, audio, device
 tracking, authentication, multitenancy, automatic retention, or public deployment.
+The optional verifier is a non-deterministic visual second opinion, not a trained
+incident classifier or safety oracle. A high-confidence rejection can suppress a
+popup, so deployments must measure missed-incident risk and keep human oversight.
