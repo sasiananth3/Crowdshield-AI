@@ -10,6 +10,7 @@ TIERS = [(80, "Critical"), (60, "High"), (35, "Moderate"), (0, "Safe")]
 MIN_MOVING_TRACKS = 3
 FAST_CROWD_SPEED = 0.04
 DISORDERED_CROWD_SPEED = 0.025
+SPARSE_DISPERSAL_SPEED = 0.06
 MIN_DISPERSAL_BASELINE = 5
 RAPID_COUNT_DROP_FRACTION = 0.5
 DISPERSAL_PERSISTENCE_SECONDS = 1.0
@@ -41,10 +42,14 @@ def _rapid_dispersal_warning(motion):
     recent_peak_count = motion.get("recent_peak_count") or 0
     drop = motion.get("count_drop_fraction") or 0.0
     recent_group_speed = motion.get("recent_group_peak_speed_normalized") or 0.0
+    recent_peak_speed = motion.get("recent_peak_speed_normalized") or 0.0
     return (
         recent_peak_count >= MIN_DISPERSAL_BASELINE
         and drop >= RAPID_COUNT_DROP_FRACTION
-        and recent_group_speed >= FAST_CROWD_SPEED
+        and (
+            recent_group_speed >= FAST_CROWD_SPEED
+            or recent_peak_speed >= SPARSE_DISPERSAL_SPEED
+        )
     )
 
 

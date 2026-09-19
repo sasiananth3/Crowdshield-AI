@@ -134,6 +134,35 @@ def test_motion_window_preserves_dispersal_signal_when_tracks_drop():
     assert "dispersal" in risk["reasons"][0].lower()
 
 
+def test_sparse_fast_tracks_preserve_dispersal_signal():
+    analyzer = MotionAnalyzer()
+
+    def people(count, offset):
+        return [
+            {
+                "track_id": index + 1,
+                "box": [
+                    0.05 * index + offset,
+                    0.1,
+                    0.05 * index + 0.04 + offset,
+                    0.4,
+                ],
+            }
+            for index in range(count)
+        ]
+
+    analyzer.update(people(6, 0.0), 0.0)
+    motion = analyzer.update(people(2, 0.08), 1.0)
+    risk = assess(2, None, motion, {})
+
+    assert motion["tracked_people"] == 2
+    assert motion["recent_group_peak_speed_normalized"] is None
+    assert motion["recent_peak_speed_normalized"] >= 0.06
+    assert motion["count_drop_fraction"] >= 0.5
+    assert risk["tier"] == "Moderate"
+    assert risk["alert_persistence_seconds"] == 1.0
+
+
 def test_motion_has_unknown_warmup_and_finite_values():
     analyzer = MotionAnalyzer()
     assert analyzer.update([], 0)["mean_speed_normalized"] is None
@@ -143,6 +172,8 @@ def test_motion_has_unknown_warmup_and_finite_values():
     result = analyzer.update([{"track_id": 1, "box": [0.2, 0.1, 0.3, 0.4]}], 2)
     assert result["motion_available"]
     assert np.isclose(result["mean_speed_normalized"], 0.1)
+    assert np.isclose(result["peak_speed_normalized"], 0.1)
+    assert np.isclose(result["recent_peak_speed_normalized"], 0.1)
 
 
 def test_density_target_conserves_count():

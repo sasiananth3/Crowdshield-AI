@@ -34,6 +34,11 @@ not metres/second. Camera movement, perspective, ID switches and occlusion can
 invalidate these signals. Pose landmarks are optional visual output and do not
 enter this version's risk score.
 
+Rapid-dispersal evidence retains both a group mean-speed peak and an any-track
+peak for five seconds. The sparse-track path requires a recent count of at least
+five people, a drop of at least 50%, and peak normalized speed of at least 0.06;
+it is intended for clips where tracking loses most IDs as people leave quickly.
+
 Tier boundaries are 35/60/80 for Moderate/High/Critical. General motion evidence
 must persist for 1.5 seconds of **video time** before alerting; rapid dispersal
 uses a one-second rule. One brief tracking dropout does not reset persistence, and

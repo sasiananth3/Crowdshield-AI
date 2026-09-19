@@ -39,12 +39,14 @@ class MotionAnalyzer:
             history.append((timestamp, position, velocity))
         self.tracks = {k: v for k, v in self.tracks.items() if timestamp - v[-1][0] < 5}
         mean_speed = float(np.mean(speeds)) if speeds else None
+        peak_speed = float(np.max(speeds)) if speeds else None
         self.dynamics.append(
             {
                 "timestamp": timestamp,
                 "count": len(detections),
                 "tracked_people": len(active),
                 "mean_speed_normalized": mean_speed,
+                "peak_speed_normalized": peak_speed,
             }
         )
         while (
@@ -65,11 +67,19 @@ class MotionAnalyzer:
             if item["tracked_people"] >= 3
             and item["mean_speed_normalized"] is not None
         ]
+        recent_speeds = [
+            item["peak_speed_normalized"]
+            for item in self.dynamics
+            if item["peak_speed_normalized"] is not None
+        ]
         return {
             "motion_available": len(speeds) > 0,
             "tracked_people": len(active),
             "mean_speed_normalized": round(mean_speed, 4)
             if mean_speed is not None
+            else None,
+            "peak_speed_normalized": round(peak_speed, 4)
+            if peak_speed is not None
             else None,
             "stalled_fraction": round(float(np.mean(np.array(speeds) < 0.005)), 3)
             if speeds
@@ -87,5 +97,11 @@ class MotionAnalyzer:
             "count_drop_fraction": round(count_drop_fraction, 3),
             "recent_group_peak_speed_normalized": round(max(group_speeds), 4)
             if group_speeds
+            else None,
+            # Preserve rapid motion even when only one or two track IDs survive.
+            # Combined with a large count drop, this recovers sparse dispersal
+            # events that the group-only speed history cannot represent.
+            "recent_peak_speed_normalized": round(max(recent_speeds), 4)
+            if recent_speeds
             else None,
         }

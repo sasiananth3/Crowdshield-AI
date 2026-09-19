@@ -157,7 +157,7 @@ export default function App() {
     const initialSync = knownAlertIds.current === null;
     if (initialSync) knownAlertIds.current = new Set();
     const fresh = initialSync
-      ? nextAlerts.filter((alert) => !alert.acknowledged).slice(0, 1)
+      ? nextAlerts.filter((alert) => !alert.acknowledged)
       : nextAlerts.filter(
           (alert) =>
             !alert.acknowledged && !knownAlertIds.current.has(alert.id),

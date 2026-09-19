@@ -18,6 +18,12 @@ const alert = {
   action: "Ask the responsible operator to review this zone.",
   acknowledged: false,
 };
+const secondAlert = {
+  ...alert,
+  id: "browser-verification-alert-2",
+  zone: "East gate",
+  video_timestamp: 46,
+};
 
 let browser;
 try {
@@ -33,6 +39,7 @@ try {
   const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
   const errors = [];
   let revealAlert = false;
+  let revealSecondAlert = false;
   let acknowledged = false;
   page.on("pageerror", (error) => errors.push(error.message));
   page.on("console", (message) => {
@@ -44,7 +51,12 @@ try {
       await route.fulfill({ status: 200, contentType: "application/json", body: '{"acknowledged":true}' });
       return;
     }
-    const payload = revealAlert ? [{ ...alert, acknowledged }] : [];
+    const payload = revealAlert
+      ? [
+          ...(revealSecondAlert ? [{ ...secondAlert, acknowledged }] : []),
+          { ...alert, acknowledged },
+        ]
+      : [];
     await route.fulfill({
       status: 200,
       contentType: "application/json",
@@ -77,18 +89,22 @@ try {
     .getByRole("button", { name: "Dismiss warning popup" })
     .click();
   await popup.waitFor({ state: "hidden" });
+  revealSecondAlert = true;
   await page.reload();
   const restoredPopup = page.getByRole("alertdialog");
   await restoredPopup.waitFor({ timeout: 10000 });
   assert.match(await restoredPopup.innerText(), /Main concourse/);
+  assert.match(await restoredPopup.innerText(), /2 warnings pending/);
   await page.screenshot({
     path: resolve(root, "reports/browser-alert-popup.png"),
     fullPage: true,
   });
 
   await restoredPopup
-    .getByRole("button", { name: "View alert history" })
+    .getByRole("button", { name: "Dismiss warning popup" })
     .click();
+  await restoredPopup.getByText("East gate", { exact: true }).waitFor();
+  await restoredPopup.getByRole("button", { name: "View alert history" }).click();
   await page.getByRole("heading", { name: "Alert center" }).waitFor();
   const historyRow = page.locator(".alert-row").filter({ hasText: "Main concourse" });
   await historyRow.waitFor();
