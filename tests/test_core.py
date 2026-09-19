@@ -1,4 +1,9 @@
+from pathlib import Path
+import threading
+
 import numpy as np
+
+from backend.app.worker import Manager
 from ml.forecast import TrendForecast
 from ml.kinematics import MotionAnalyzer
 from ml.risk import AlertDebouncer, assess
@@ -53,6 +58,33 @@ def test_density_target_conserves_count():
         import pytest
 
         pytest.skip("Optional real dataset not downloaded")
-    samples = read_data(discover(root) / "train_data")
-    for _, _, density, count in samples[:5]:
+    samples = read_data(discover(root) / "train_data", limit=5)
+    for _, _, density, count in samples:
         assert abs(float(density.sum()) - count) < 0.001
+
+
+def test_frame_publish_retries_transient_windows_lock(tmp_path, monkeypatch):
+    manager = Manager.__new__(Manager)
+    manager.runtime = tmp_path
+    manager.lock = threading.RLock()
+    folder = tmp_path / "jobs" / "job"
+    folder.mkdir(parents=True)
+    (folder / "frame.jpg").write_bytes(b"old")
+
+    original_replace = Path.replace
+    attempts = 0
+
+    def transient_access_denied(path, target):
+        nonlocal attempts
+        if path.name == "frame-next.jpg" and attempts < 2:
+            attempts += 1
+            raise PermissionError(5, "Access is denied", str(target))
+        return original_replace(path, target)
+
+    monkeypatch.setattr(Path, "replace", transient_access_denied)
+    image = np.full((12, 16, 3), 127, dtype=np.uint8)
+    manager._publish_image(folder, "frame.jpg", image)
+
+    assert attempts == 2
+    assert manager.frame_bytes("job").startswith(b"\xff\xd8")
+    assert not (folder / "frame-next.jpg").exists()

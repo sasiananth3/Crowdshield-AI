@@ -34,6 +34,8 @@ const stamp = (seconds) =>
     .padStart(2, "0")}:${Math.floor((seconds || 0) % 60)
     .toString()
     .padStart(2, "0")}`;
+const recordedAt = (value) =>
+  value ? new Date(value).toLocaleString() : "Recorded time unavailable";
 async function api(path, options = {}) {
   const response = await fetch(path, options);
   if (!response.ok) {
@@ -144,9 +146,49 @@ export default function App() {
   const [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
     [connected, setConnected] = useState(false),
-    [mobile, setMobile] = useState(false);
+    [mobile, setMobile] = useState(false),
+    [alertQueue, setAlertQueue] = useState([]);
   const fileRef = useRef();
+  const knownAlertIds = useRef(null);
   const jobId = job?.id;
+
+  function syncGlobalAlerts(nextAlerts) {
+    setAllAlerts(nextAlerts);
+    if (knownAlertIds.current === null) {
+      knownAlertIds.current = new Set(nextAlerts.map((alert) => alert.id));
+      return;
+    }
+    const fresh = nextAlerts.filter(
+      (alert) =>
+        !alert.acknowledged && !knownAlertIds.current.has(alert.id),
+    );
+    nextAlerts.forEach((alert) => knownAlertIds.current.add(alert.id));
+    if (!fresh.length) return;
+    setAlertQueue((current) => {
+      const queued = new Set(current.map((alert) => alert.id));
+      // The API returns newest first. Queue oldest first so simultaneous alerts
+      // are shown to the operator in the order in which they occurred.
+      const additions = fresh
+        .slice()
+        .reverse()
+        .filter((alert) => !queued.has(alert.id));
+      return [...current, ...additions];
+    });
+  }
+
+  async function acknowledgeAlert(id) {
+    await post(`/api/alerts/${id}/acknowledge`);
+    const requests = [api("/api/alerts")];
+    if (jobId) requests.push(api(`/api/alerts?job_id=${jobId}`));
+    const [globalAlerts, jobAlerts] = await Promise.all(requests);
+    syncGlobalAlerts(globalAlerts);
+    if (jobAlerts) setAlerts(jobAlerts);
+    setAlertQueue((current) => current.filter((alert) => alert.id !== id));
+  }
+
+  function dismissAlertPopup() {
+    setAlertQueue((current) => current.slice(1));
+  }
   useEffect(() => {
     let active = true;
     const refresh = async () => {
@@ -218,13 +260,13 @@ export default function App() {
     const refresh = () =>
       api("/api/alerts")
         .then((a) => {
-          if (active) setAllAlerts(a);
+          if (active) syncGlobalAlerts(a);
         })
         .catch((e) => {
           if (active) setError(e.message);
         });
     refresh();
-    const timer = setInterval(refresh, 3000);
+    const timer = setInterval(refresh, 1500);
     return () => {
       active = false;
       clearInterval(timer);
@@ -836,10 +878,7 @@ export default function App() {
                 <AlertList
                   alerts={alerts.slice(0, 3)}
                   onAck={(id) =>
-                    perform(async () => {
-                      await post(`/api/alerts/${id}/acknowledge`);
-                      setAlerts(await api(`/api/alerts?job_id=${jobId}`));
-                    })
+                    perform(() => acknowledgeAlert(id))
                   }
                 />
               </section>
@@ -930,10 +969,7 @@ export default function App() {
               <AlertList
                 alerts={allAlerts}
                 onAck={(id) =>
-                  perform(async () => {
-                    await post(`/api/alerts/${id}/acknowledge`);
-                    setAllAlerts(await api("/api/alerts"));
-                  })
+                  perform(() => acknowledgeAlert(id))
                 }
               />
             </section>
@@ -1127,7 +1163,82 @@ export default function App() {
           </footer>
         </main>
       </div>
+      {alertQueue.length > 0 && (
+        <AlertPopup
+          alert={alertQueue[0]}
+          pending={alertQueue.length}
+          busy={busy}
+          onDismiss={dismissAlertPopup}
+          onAcknowledge={() =>
+            perform(() => acknowledgeAlert(alertQueue[0].id))
+          }
+          onViewHistory={() => {
+            dismissAlertPopup();
+            setTab("Alerts");
+            setMobile(false);
+          }}
+        />
+      )}
     </div>
+  );
+}
+
+function AlertPopup({
+  alert,
+  pending,
+  busy,
+  onDismiss,
+  onAcknowledge,
+  onViewHistory,
+}) {
+  return (
+    <aside
+      className={`alert-popup ${alert.tier.toLowerCase()}`}
+      role="alertdialog"
+      aria-live="assertive"
+      aria-label={`${alert.tier} warning for ${alert.zone}`}
+    >
+      <div className="alert-popup-heading">
+        <div className="alert-popup-symbol">
+          <AlertTriangle size={21} />
+        </div>
+        <div>
+          <span>Abnormal condition warning</span>
+          <strong>{alert.zone}</strong>
+        </div>
+        <Badge value={alert.tier} />
+        <button
+          className="alert-popup-close"
+          aria-label="Dismiss warning popup"
+          onClick={onDismiss}
+        >
+          <X size={17} />
+        </button>
+      </div>
+      <p>{alert.reasons?.join(" · ")}</p>
+      <small>{alert.action}</small>
+      <div className="alert-popup-meta">
+        <span>Video {stamp(alert.video_timestamp)}</span>
+        <span>{recordedAt(alert.created_at)}</span>
+        {pending > 1 && <span>{pending} warnings pending</span>}
+      </div>
+      <div className="alert-popup-actions">
+        <button className="button secondary small" onClick={onViewHistory}>
+          View alert history
+        </button>
+        <button
+          className="button small"
+          disabled={busy}
+          onClick={onAcknowledge}
+        >
+          <Check size={14} />
+          Acknowledge
+        </button>
+      </div>
+      <div className="alert-popup-note">
+        Experimental warning - operator review required
+      </div>
+    </aside>
   );
 }
 
@@ -1147,7 +1258,10 @@ function AlertList({ alerts, onAck }) {
             <p>{a.reasons?.join(" · ")}</p>
             <small>{a.action}</small>
           </div>
-          <span className="alert-time">Video {stamp(a.video_timestamp)}</span>
+          <span className="alert-time">
+            <span>Video {stamp(a.video_timestamp)}</span>
+            <span>{recordedAt(a.created_at)}</span>
+          </span>
           <button
             className="button secondary small"
             disabled={a.acknowledged}

@@ -91,6 +91,31 @@ class Manager:
         with self.lock:
             return self.public(self.jobs[job_id]) if job_id in self.jobs else None
 
+    def frame_bytes(self, job_id, heatmap=False):
+        """Read a published frame without racing the Windows file replacement."""
+        name = "heatmap.jpg" if heatmap else "frame.jpg"
+        path = self.runtime / "jobs" / job_id / name
+        with self.lock:
+            return path.read_bytes() if path.is_file() else None
+
+    def _publish_image(self, folder, name, image):
+        """Encode and atomically publish an image, retrying transient file locks."""
+        target = folder / name
+        temporary = folder / f"{target.stem}-next{target.suffix}"
+        if not cv2.imwrite(str(temporary), image):
+            raise RuntimeError(f"Could not encode {name}")
+        for attempt in range(7):
+            try:
+                # API frame reads use the same lock. The retry also covers short
+                # locks held by antivirus scanners and filesystem indexers.
+                with self.lock:
+                    temporary.replace(target)
+                return
+            except PermissionError:
+                if attempt == 6:
+                    raise
+                time.sleep(min(0.01 * (2**attempt), 0.2))
+
     def start(
         self, job_id, zones, enable_pose, sample_fps, forecast_mode="persistence"
     ):
@@ -312,9 +337,7 @@ class Manager:
                     for a, b in connections:
                         if a in joints and b in joints:
                             cv2.line(frame, joints[a], joints[b], (255, 205, 40), 1)
-                temp = folder / "frame-next.jpg"
-                cv2.imwrite(str(temp), frame)
-                temp.replace(folder / "frame.jpg")
+                self._publish_image(folder, "frame.jpg", frame)
                 if estimated:
                     density_map = estimated["map"]
                     normalized = (
@@ -323,9 +346,11 @@ class Manager:
                     heat = cv2.applyColorMap(
                         cv2.resize(normalized, (w, h)), cv2.COLORMAP_TURBO
                     )
-                    temp = folder / "heatmap-next.jpg"
-                    cv2.imwrite(str(temp), cv2.addWeighted(frame, 0.45, heat, 0.55, 0))
-                    temp.replace(folder / "heatmap.jpg")
+                    self._publish_image(
+                        folder,
+                        "heatmap.jpg",
+                        cv2.addWeighted(frame, 0.45, heat, 0.55, 0),
+                    )
                 self.store.sample(job_id, sample)
                 with self.lock:
                     job.update(

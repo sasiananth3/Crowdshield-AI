@@ -7,6 +7,7 @@
     "dev": "vite --host 127.0.0.1",
     "build": "vite build",
     "verify": "node scripts/verify.mjs",
+    "verify:alert": "node scripts/verify-alert.mjs",
     "preview": "vite preview --host 127.0.0.1"
   },
   "dependencies": {

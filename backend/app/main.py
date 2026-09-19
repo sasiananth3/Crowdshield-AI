@@ -221,12 +221,11 @@ def create_app(runtime=None):
     @app.get("/api/jobs/{job_id}/frame")
     def frame(job_id: str, heatmap: bool = False):
         require_job(job_id)
-        path = runtime / "jobs" / job_id / ("heatmap.jpg" if heatmap else "frame.jpg")
-        if not path.exists():
+        content = manager.frame_bytes(job_id, heatmap)
+        if content is None:
             raise HTTPException(404, "Frame not available yet")
-        # Read before response so atomic replacements cannot change Content-Length.
         return Response(
-            path.read_bytes(),
+            content,
             media_type="image/jpeg",
             headers={"Cache-Control": "no-store"},
         )

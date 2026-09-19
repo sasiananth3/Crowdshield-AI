@@ -98,6 +98,12 @@ try {
     if (job?.status === "failed") throw new Error(job.error);
     return job?.latest?.timestamp >= 12;
   });
+  const warningPopup = page.getByRole("alertdialog");
+  await warningPopup.waitFor({ timeout: 60000 });
+  await warningPopup.getByText("Abnormal condition warning").waitFor();
+  await warningPopup
+    .getByRole("button", { name: "Dismiss warning popup" })
+    .click();
   await page.getByText("count lstm · experimental", { exact: true }).waitFor();
   await page.screenshot({
     path: resolve(root, "reports/browser-analysis.png"),
@@ -167,6 +173,7 @@ try {
       "Load sample",
       "Start real inference",
       "LSTM output",
+      "Abnormal-condition warning popup",
       "Heatmap",
       "Stop",
       "Acknowledge alert",

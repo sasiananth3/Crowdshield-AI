@@ -28,9 +28,12 @@ def discover(root):
     return matches[0].parent
 
 
-def read_data(directory):
+def read_data(directory, limit=None):
     samples = []
-    for path in sorted((directory / "images").glob("*.jpg")):
+    paths = sorted((directory / "images").glob("*.jpg"))
+    if limit is not None:
+        paths = paths[:limit]
+    for path in paths:
         rgb = np.array(Image.open(path).convert("RGB"))
         points = loadmat(directory / "ground_truth" / ("GT_" + path.stem + ".mat"))[
             "image_info"

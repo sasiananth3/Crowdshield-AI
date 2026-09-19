@@ -1,0 +1,84 @@
+import assert from "node:assert/strict";
+import { existsSync } from "node:fs";
+import { resolve, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+import { chromium } from "playwright";
+
+const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
+const base = process.env.CROWDSHIELD_URL || "http://127.0.0.1:8000";
+const alert = {
+  id: "browser-verification-alert",
+  job_id: "browser-verification-job",
+  zone: "Main concourse",
+  created_at: new Date().toISOString(),
+  video_timestamp: 18.5,
+  score: 86,
+  tier: "Critical",
+  reasons: ["Observed count exceeds the configured reference capacity"],
+  action: "Ask the responsible operator to review this zone.",
+  acknowledged: false,
+};
+
+let browser;
+try {
+  const browserCandidates = [
+    process.env.CROWDSHIELD_BROWSER_PATH,
+    "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe",
+    "C:/Program Files/Microsoft/Edge/Application/msedge.exe",
+    "C:/Program Files/Google/Chrome/Application/chrome.exe",
+    "C:/Program Files (x86)/Google/Chrome/Application/chrome.exe",
+  ].filter(Boolean);
+  const executablePath = browserCandidates.find((path) => existsSync(path));
+  browser = await chromium.launch({ executablePath, headless: true });
+  const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+  const errors = [];
+  let revealAlert = false;
+  let acknowledged = false;
+  page.on("pageerror", (error) => errors.push(error.message));
+  page.on("console", (message) => {
+    if (message.type() === "error") errors.push(message.text());
+  });
+  await page.route("**/api/alerts**", async (route) => {
+    if (route.request().method() === "POST") {
+      acknowledged = true;
+      await route.fulfill({ status: 200, contentType: "application/json", body: '{"acknowledged":true}' });
+      return;
+    }
+    const payload = revealAlert ? [{ ...alert, acknowledged }] : [];
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(payload),
+    });
+  });
+
+  await page.goto(base);
+  await page.waitForFunction(
+    () => document.body.innerText.includes("Backend connected"),
+    null,
+    { timeout: 30000 },
+  );
+  revealAlert = true;
+
+  const popup = page.getByRole("alertdialog");
+  await popup.waitFor({ timeout: 10000 });
+  await popup.getByText("Abnormal condition warning", { exact: true }).waitFor();
+  assert.match(await popup.innerText(), /Main concourse/);
+  assert.match(await popup.innerText(), /Critical/i);
+  await page.screenshot({
+    path: resolve(root, "reports/browser-alert-popup.png"),
+    fullPage: true,
+  });
+
+  await popup.getByRole("button", { name: "View alert history" }).click();
+  await page.getByRole("heading", { name: "Alert center" }).waitFor();
+  const historyRow = page.locator(".alert-row").filter({ hasText: "Main concourse" });
+  await historyRow.waitFor();
+  await historyRow.getByRole("button", { name: "Acknowledge", exact: true }).click();
+  await historyRow.getByRole("button", { name: "Acknowledged", exact: true }).waitFor();
+  assert.equal(acknowledged, true);
+  assert.deepEqual(errors, []);
+  console.log("Alert popup, history, and acknowledgment verification passed");
+} finally {
+  if (browser) await browser.close();
+}
