@@ -24,7 +24,10 @@ def test_multi_person_motion_can_warn_without_capacity():
     risk = assess(
         6,
         None,
-        {"tracked_people": 5, "mean_speed_normalized": 0.06},
+        {
+            "tracked_people": 5,
+            "mean_speed_body_lengths_per_second": 0.25,
+        },
         {},
     )
     assert risk["tier"] == "Moderate"
@@ -36,7 +39,10 @@ def test_single_fast_person_does_not_create_motion_warning():
     risk = assess(
         1,
         None,
-        {"tracked_people": 1, "mean_speed_normalized": 0.2},
+        {
+            "tracked_people": 1,
+            "mean_speed_body_lengths_per_second": 0.5,
+        },
         {},
     )
     assert risk["tier"] == "Uncalibrated"
@@ -46,11 +52,30 @@ def test_multi_person_motion_sets_moderate_floor_with_capacity():
     risk = assess(
         3,
         100,
-        {"tracked_people": 3, "mean_speed_normalized": 0.04},
+        {
+            "tracked_people": 3,
+            "mean_speed_body_lengths_per_second": 0.24,
+        },
         {},
     )
     assert risk["tier"] == "Moderate"
     assert risk["score"] == 35.0
+
+
+def test_normal_near_camera_walking_does_not_warn():
+    risk = assess(
+        10,
+        None,
+        {
+            "tracked_people": 9,
+            "mean_speed_normalized": 0.0673,
+            "mean_speed_body_lengths_per_second": 0.128,
+            "reversal_fraction": 0.0,
+            "sudden_motion_fraction": 0.111,
+        },
+        {},
+    )
+    assert risk["tier"] == "Uncalibrated"
 
 
 def test_risk_is_bounded_and_not_probability():
@@ -128,7 +153,7 @@ def test_motion_window_preserves_dispersal_signal_when_tracks_drop():
 
     assert motion["recent_peak_count"] == 6
     assert motion["count_drop_fraction"] >= 0.5
-    assert motion["recent_group_peak_speed_normalized"] >= 0.04
+    assert motion["recent_peak_mean_speed_body_lengths_per_second"] >= 0.2
     assert risk["tier"] == "Moderate"
     assert risk["alert_persistence_seconds"] == 1.0
     assert "dispersal" in risk["reasons"][0].lower()
@@ -157,7 +182,7 @@ def test_sparse_fast_tracks_preserve_dispersal_signal():
 
     assert motion["tracked_people"] == 2
     assert motion["recent_group_peak_speed_normalized"] is None
-    assert motion["recent_peak_speed_normalized"] >= 0.06
+    assert motion["recent_peak_mean_speed_body_lengths_per_second"] >= 0.2
     assert motion["count_drop_fraction"] >= 0.5
     assert risk["tier"] == "Moderate"
     assert risk["alert_persistence_seconds"] == 1.0
@@ -174,6 +199,10 @@ def test_motion_has_unknown_warmup_and_finite_values():
     assert np.isclose(result["mean_speed_normalized"], 0.1)
     assert np.isclose(result["peak_speed_normalized"], 0.1)
     assert np.isclose(result["recent_peak_speed_normalized"], 0.1)
+    assert np.isclose(result["mean_speed_body_lengths_per_second"], 0.3333)
+    assert np.isclose(
+        result["recent_peak_mean_speed_body_lengths_per_second"], 0.3333
+    )
 
 
 def test_density_target_conserves_count():

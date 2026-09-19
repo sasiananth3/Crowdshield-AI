@@ -8,9 +8,9 @@ TIERS = [(80, "Critical"), (60, "High"), (35, "Moderate"), (0, "Safe")]
 # that deployments can audit them. Persistence is applied separately by
 # AlertDebouncer; a single frame that crosses a threshold does not create an alert.
 MIN_MOVING_TRACKS = 3
-FAST_CROWD_SPEED = 0.04
-DISORDERED_CROWD_SPEED = 0.025
-SPARSE_DISPERSAL_SPEED = 0.06
+FAST_CROWD_BODY_SPEED = 0.24
+DISORDERED_CROWD_BODY_SPEED = 0.18
+SPARSE_DISPERSAL_BODY_SPEED = 0.20
 MIN_DISPERSAL_BASELINE = 5
 RAPID_COUNT_DROP_FRACTION = 0.5
 DISPERSAL_PERSISTENCE_SECONDS = 1.0
@@ -21,15 +21,13 @@ ALERT_RECOVERY_SECONDS = 2.0
 def _motion_warning(motion):
     """Return whether several tracked people show unusually strong movement."""
     tracked = motion.get("tracked_people") or 0
-    speed = motion.get("mean_speed_normalized") or 0.0
-    sudden = motion.get("sudden_motion_fraction") or 0.0
+    body_speed = motion.get("mean_speed_body_lengths_per_second") or 0.0
     reversal = motion.get("reversal_fraction") or 0.0
     if tracked < MIN_MOVING_TRACKS:
         return False
     return (
-        speed >= FAST_CROWD_SPEED
-        or sudden >= 0.25
-        or (speed >= DISORDERED_CROWD_SPEED and reversal >= 0.5)
+        body_speed >= FAST_CROWD_BODY_SPEED
+        or (body_speed >= DISORDERED_CROWD_BODY_SPEED and reversal >= 0.5)
     )
 
 
@@ -41,15 +39,13 @@ def _rapid_dispersal_warning(motion):
     """
     recent_peak_count = motion.get("recent_peak_count") or 0
     drop = motion.get("count_drop_fraction") or 0.0
-    recent_group_speed = motion.get("recent_group_peak_speed_normalized") or 0.0
-    recent_peak_speed = motion.get("recent_peak_speed_normalized") or 0.0
+    recent_body_speed = (
+        motion.get("recent_peak_mean_speed_body_lengths_per_second") or 0.0
+    )
     return (
         recent_peak_count >= MIN_DISPERSAL_BASELINE
         and drop >= RAPID_COUNT_DROP_FRACTION
-        and (
-            recent_group_speed >= FAST_CROWD_SPEED
-            or recent_peak_speed >= SPARSE_DISPERSAL_SPEED
-        )
+        and recent_body_speed >= SPARSE_DISPERSAL_BODY_SPEED
     )
 
 

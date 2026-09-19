@@ -12,19 +12,22 @@ class MotionAnalyzer:
 
     def update(self, detections, timestamp):
         active = []
-        speeds, reversals = [], []
+        speeds, body_speeds, reversals = [], [], []
         for item in detections:
             track_id = item.get("track_id")
             if track_id is None:
                 continue
             x1, y1, x2, y2 = item["box"]
             position = np.array([(x1 + x2) / 2, y2])
+            height = max(0.02, y2 - y1)
             history = self.tracks.setdefault(track_id, deque(maxlen=15))
             if history and timestamp > history[-1][0]:
                 velocity = (position - history[-1][1]) / (timestamp - history[-1][0])
                 speed = float(np.linalg.norm(velocity))
                 active.append(track_id)
                 speeds.append(speed)
+                average_height = (height + history[-1][3]) / 2
+                body_speeds.append(speed / max(0.02, average_height))
                 previous = history[-1][2]
                 if np.linalg.norm(previous) > 0.01 and speed > 0.01:
                     reversals.append(
@@ -36,10 +39,11 @@ class MotionAnalyzer:
                     )
             else:
                 velocity = np.zeros(2)
-            history.append((timestamp, position, velocity))
+            history.append((timestamp, position, velocity, height))
         self.tracks = {k: v for k, v in self.tracks.items() if timestamp - v[-1][0] < 5}
         mean_speed = float(np.mean(speeds)) if speeds else None
         peak_speed = float(np.max(speeds)) if speeds else None
+        mean_body_speed = float(np.mean(body_speeds)) if body_speeds else None
         self.dynamics.append(
             {
                 "timestamp": timestamp,
@@ -47,6 +51,7 @@ class MotionAnalyzer:
                 "tracked_people": len(active),
                 "mean_speed_normalized": mean_speed,
                 "peak_speed_normalized": peak_speed,
+                "mean_speed_body_lengths_per_second": mean_body_speed,
             }
         )
         while (
@@ -72,6 +77,11 @@ class MotionAnalyzer:
             for item in self.dynamics
             if item["peak_speed_normalized"] is not None
         ]
+        recent_body_speeds = [
+            item["mean_speed_body_lengths_per_second"]
+            for item in self.dynamics
+            if item["mean_speed_body_lengths_per_second"] is not None
+        ]
         return {
             "motion_available": len(speeds) > 0,
             "tracked_people": len(active),
@@ -80,6 +90,9 @@ class MotionAnalyzer:
             else None,
             "peak_speed_normalized": round(peak_speed, 4)
             if peak_speed is not None
+            else None,
+            "mean_speed_body_lengths_per_second": round(mean_body_speed, 4)
+            if mean_body_speed is not None
             else None,
             "stalled_fraction": round(float(np.mean(np.array(speeds) < 0.005)), 3)
             if speeds
@@ -103,5 +116,10 @@ class MotionAnalyzer:
             # events that the group-only speed history cannot represent.
             "recent_peak_speed_normalized": round(max(recent_speeds), 4)
             if recent_speeds
+            else None,
+            "recent_peak_mean_speed_body_lengths_per_second": round(
+                max(recent_body_speeds), 4
+            )
+            if recent_body_speeds
             else None,
         }

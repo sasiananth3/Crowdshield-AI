@@ -34,10 +34,13 @@ not metres/second. Camera movement, perspective, ID switches and occlusion can
 invalidate these signals. Pose landmarks are optional visual output and do not
 enter this version's risk score.
 
-Rapid-dispersal evidence retains both a group mean-speed peak and an any-track
-peak for five seconds. The sparse-track path requires a recent count of at least
-five people, a drop of at least 50%, and peak normalized speed of at least 0.06;
-it is intended for clips where tracking loses most IDs as people leave quickly.
+Motion warnings normalize each tracked person's image displacement by their
+bounding-box height to reduce the perspective bias that makes nearby walking look
+faster than distant running. General group motion requires a mean of 0.24 body
+lengths per second, or 0.18 plus strong direction reversal. Rapid-dispersal
+evidence retains the peak mean body-relative speed for five seconds and requires
+a recent count of at least five people, a drop of at least 50%, and speed of at
+least 0.20 body lengths per second. These values remain exploratory.
 
 Tier boundaries are 35/60/80 for Moderate/High/Critical. General motion evidence
 must persist for 1.5 seconds of **video time** before alerting; rapid dispersal
@@ -48,8 +51,8 @@ escalation can bypass that cooldown. A scene-cut heuristic resets tracking,
 forecast history and alert persistence. Cuts are not perfectly detected.
 The policy is not calibrated for any venue. Without capacity, occupancy remains
 uncalibrated, but a Moderate motion warning can be assigned when at least three
-people are tracked and their mean normalized image-space speed is at least 0.04,
-or related sudden/reversal thresholds are crossed. With capacity configured, the
+people are tracked and the body-relative motion thresholds above are crossed.
+With capacity configured, the
 same motion condition sets a Moderate score floor. These thresholds are exploratory,
 not a trained action-recognition or incident classifier, and still require the
 applicable temporal persistence rule before an alert is stored.
