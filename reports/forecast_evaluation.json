@@ -4,8 +4,20 @@
     "horizon": 3,
     "mean": 11.323694229125977,
     "std": 4.178913593292236,
-    "source": "YOLOv8n pseudo-counts from UMN demo; NOT independent crowd-risk ground truth",
-    "sample_rate_hz": 1
+    "source_csv": "data/processed/counts.csv",
+    "source_metadata": {
+      "source_video": "data/raw/umn-demo.avi",
+      "detector_weights": "models/yolov8n.pt",
+      "label_type": "YOLO-derived pseudo counts; not manual ground truth",
+      "sample_rate_hz": 1.0,
+      "requested_sample_rate_hz": 1.0,
+      "source_fps": 30.0,
+      "samples": 258,
+      "segments": 2
+    },
+    "label_warning": "Detector pseudo-counts are not independent crowd-risk ground truth",
+    "sample_rate_hz": 1.0,
+    "seed": 42
   },
   "train_windows": 134,
   "validation_windows": 42,
@@ -20,7 +32,7 @@
     "rmse": 5.380741596221924
   },
   "split": "Chronological 60/20/20 before windowing; scene-cut windows excluded",
-  "epochs": 100,
+  "epochs": 150,
   "limitations": [
     "One demonstration video, not external validation",
     "Predicted count targets are detector pseudo-labels",

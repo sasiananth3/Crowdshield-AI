@@ -7,7 +7,13 @@ frontend/dist/
 .env
 data/raw/
 data/processed/
+data/detector/images/
+data/detector/labels/
+data/detector/train.txt
+data/detector/val.txt
+data/detector.yaml
 runtime/
+runs/
 models/*.pt
 models/*.pth
 models/*.task

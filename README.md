@@ -95,14 +95,14 @@ kinematics**, not a validated pose-behavior classifier.
 
 | Experiment | Held-out MAE | Held-out RMSE | Meaning |
 |---|---:|---:|---|
-| MobileNetV2 + density head | 20.69 | 34.71 | People per ShanghaiTech Part B image |
+| MobileNetV2 + density head | 19.59 | 33.52 | People per ShanghaiTech Part B image |
 | Training-mean count baseline | 71.42 | 95.22 | Sanity check, **not a reference-paper reproduction** |
 | Count LSTM | 4.43 | 4.99 | Forecast of YOLO-derived pseudo-counts on one UMN demonstration |
 | Persistence forecast baseline | 3.67 | 5.38 | Same chronological holdout as the LSTM |
 
 Density training used 320 images and 80 validation images from the official
 400-image training split; testing used the separate official 316-image test split.
-Seed 42, 35 epochs; validation MAE selected the checkpoint before test evaluation.
+Seed 42, 200 epochs; validation MAE selected the checkpoint before test evaluation.
 The 256-pixel square resize and short training run limit generalization.
 
 The LSTM used chronological 60/20/20 partitions **before windowing**, excluding
@@ -132,13 +132,31 @@ With the virtual environment activated:
 
 ```bash
 python scripts/download_data.py
-python -m training.train_density --epochs 35 --threads 4
+python -m training.train_detector
 python -m training.extract_counts
-python -m training.train_forecast --epochs 100
+python -m training.train_forecast --epochs 150
+python -m training.evaluate_density
 ```
 
-Training commands overwrite the corresponding local checkpoint and evaluation
-report. Preserve a copy first if you want to retain the submitted model. Do not
+For detector fine-tuning, place images in `data/detector/images/` and matching
+YOLO label files in `data/detector/labels/`; nested paths may be used when they
+match. Run `python -m training.train_detector --prepare-only` to validate every
+image/label pair and generate a deterministic 80/20 split plus
+`data/detector.yaml`. Running `train_detector` also performs this preparation
+automatically when the YAML is absent. Class `0` must mean person. See
+[`data/detector/README.md`](data/detector/README.md) for the exact format.
+
+The downloaded project datasets do not provide person bounding boxes:
+ShanghaiTech has point annotations and UMN is an unlabelled demonstration. Pass
+`--data`, `--weights`, or `--output` to override the defaults. `extract_counts`
+prefers `models/detector.pt` after fine-tuning and otherwise uses the downloaded
+`models/yolov8n.pt`.
+
+The included density checkpoint was produced with the separate reproducibility
+command `python -m training.train_density --epochs 200 --threads 4`.
+`evaluate_density` performs evaluation only and preserves training history in
+the existing report. Training commands overwrite the corresponding local
+checkpoint and evaluation report, so preserve a copy first if needed. Do not
 tune repeatedly against the held-out test set and then report it as untouched.
 Dataset receipts and model checksums are recorded in `reports/`.
 

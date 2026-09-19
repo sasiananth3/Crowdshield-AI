@@ -21,3 +21,13 @@ ShanghaiTech photographs must never be passed off as video sequences.
 UCF-QNRF (https://www.crcv.ucf.edu/data/ucf-qnrf/), CrowdHuman
 (https://www.crowdhuman.org/) and PETS2009 are future optional benchmarks, not
 datasets this version claims to have trained on.
+
+## Optional detector fine-tuning data
+
+Place paired images and labels in `data/detector/images/` and
+`data/detector/labels/`. `python -m training.train_detector --prepare-only`
+validates the YOLO bounding boxes and generates `data/detector.yaml` plus fixed
+train/validation manifests. Class `0` must be assigned to people. No detector
+training dataset is bundled or downloaded automatically, and a fine-tuned
+checkpoint must not be described as COCO-only pretrained weights. See
+`data/detector/README.md` for the staging format.
