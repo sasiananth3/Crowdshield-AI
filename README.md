@@ -69,9 +69,11 @@ but this build was tested on Linux/Python 3.12, not on a Windows computer.
 5. Open **Alerts** to acknowledge warnings; **Analyses** to export CSV; and
    **Evaluation** to show actual measured results and their limitations.
 
-For an alert-workflow demonstration only, a deliberately low reference capacity
-(for example 10 for the UMN sample) triggers the experimental occupancy rule.
-This is a test of software behavior, not evidence that the footage is dangerous.
+For an alert-workflow demonstration, the UMN sample's sustained multi-person
+movement can trigger the exploratory motion rule without a capacity value. A
+deliberately low reference capacity (for example 10) additionally demonstrates
+the experimental occupancy rule. This is a test of software behavior, not evidence
+that the footage is dangerous.
 
 ## What is implemented
 
@@ -221,7 +223,8 @@ An operator must review footage and follow the venue's approved procedures.
 Detector and density counts describe the same scene and are **never added**.
 Ground density is only shown as observed zone count / explicitly supplied area;
 no camera calibration is inferred. Risk is not a probability. Missing capacity
-produces `Uncalibrated`, not `Safe`. The `Safe` tier is only a heuristic label.
+leaves occupancy `Uncalibrated`, but sustained multi-person image-space movement
+can produce a Moderate warning. The `Safe` tier is only a heuristic label.
 
 No identity embeddings or face-emotion inference are implemented. Original video
 and rendered frames can still contain identifiable faces; they are **not blurred

@@ -38,7 +38,13 @@ Tier boundaries are 35/60/80 for Moderate/High/Critical. A tier must persist for
 three seconds of **video time** before alerting; a 30-second cooldown suppresses
 repeats, while escalation can bypass that cooldown. A scene-cut heuristic resets
 tracking, forecast history and alert persistence. Cuts are not perfectly detected.
-The policy is not calibrated for any venue. Without capacity no tier is assigned.
+The policy is not calibrated for any venue. Without capacity, occupancy remains
+uncalibrated, but a Moderate motion warning can be assigned when at least three
+people are tracked and their mean normalized image-space speed is at least 0.04,
+or related sudden/reversal thresholds are crossed. With capacity configured, the
+same motion condition sets a Moderate score floor. These thresholds are exploratory,
+not a trained action-recognition or incident classifier, and still require the
+three-second persistence rule before an alert is stored.
 
 ## Counting protocol
 

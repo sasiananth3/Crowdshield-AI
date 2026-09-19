@@ -20,6 +20,39 @@ def test_no_risk_without_capacity():
     assert assess(20, None, {}, {})["tier"] == "Uncalibrated"
 
 
+def test_multi_person_motion_can_warn_without_capacity():
+    risk = assess(
+        6,
+        None,
+        {"tracked_people": 5, "mean_speed_normalized": 0.06},
+        {},
+    )
+    assert risk["tier"] == "Moderate"
+    assert risk["score"] is None
+    assert risk["method"] == "motion_threshold_v1"
+
+
+def test_single_fast_person_does_not_create_motion_warning():
+    risk = assess(
+        1,
+        None,
+        {"tracked_people": 1, "mean_speed_normalized": 0.2},
+        {},
+    )
+    assert risk["tier"] == "Uncalibrated"
+
+
+def test_multi_person_motion_sets_moderate_floor_with_capacity():
+    risk = assess(
+        3,
+        100,
+        {"tracked_people": 3, "mean_speed_normalized": 0.04},
+        {},
+    )
+    assert risk["tier"] == "Moderate"
+    assert risk["score"] == 35.0
+
+
 def test_risk_is_bounded_and_not_probability():
     risk = assess(
         100, 5, {"reversal_fraction": 1, "sudden_motion_fraction": 1}, {"count": 200}

@@ -4,9 +4,46 @@ import math
 
 TIERS = [(80, "Critical"), (60, "High"), (35, "Moderate"), (0, "Safe")]
 
+# These image-space thresholds are exploratory and are intentionally kept here so
+# that deployments can audit them. Persistence is applied separately by
+# AlertDebouncer; a single frame that crosses a threshold does not create an alert.
+MIN_MOVING_TRACKS = 3
+FAST_CROWD_SPEED = 0.04
+DISORDERED_CROWD_SPEED = 0.025
+
+
+def _motion_warning(motion):
+    """Return whether several tracked people show unusually strong movement."""
+    tracked = motion.get("tracked_people") or 0
+    speed = motion.get("mean_speed_normalized") or 0.0
+    sudden = motion.get("sudden_motion_fraction") or 0.0
+    reversal = motion.get("reversal_fraction") or 0.0
+    if tracked < MIN_MOVING_TRACKS:
+        return False
+    return (
+        speed >= FAST_CROWD_SPEED
+        or sudden >= 0.25
+        or (speed >= DISORDERED_CROWD_SPEED and reversal >= 0.5)
+    )
+
 
 def assess(count, capacity, motion, forecast):
+    motion_warning = _motion_warning(motion)
     if not capacity or capacity <= 0:
+        if motion_warning:
+            return {
+                "score": None,
+                "tier": "Moderate",
+                "reasons": [
+                    "Elevated image-space movement observed across multiple tracked people"
+                ],
+                "action": (
+                    "Review the video and monitor whether crowd movement is continuing."
+                ),
+                "method": "motion_threshold_v1",
+                "is_probability": False,
+                "validated_for_safety": False,
+            }
         return {
             "score": None,
             "tier": "Uncalibrated",
@@ -14,7 +51,9 @@ def assess(count, capacity, motion, forecast):
                 "Set a zone reference capacity to enable the experimental score"
             ],
             "action": "Review camera coverage and configure the zone.",
-            "method": "heuristic_v1",
+            "method": "heuristic_v2",
+            "is_probability": False,
+            "validated_for_safety": False,
         }
     occupancy = max(0.0, count / capacity)
     density_score = min(1.0, occupancy)
@@ -29,6 +68,10 @@ def assess(count, capacity, motion, forecast):
     score = round(
         min(100.0, 70 * density_score + 20 * motion_score + 10 * min(1.0, growth)), 1
     )
+    # A persistent multi-person movement warning must remain alertable even when a
+    # generously configured capacity keeps the occupancy contribution low.
+    if motion_warning:
+        score = max(35.0, score)
     tier = next(label for threshold, label in TIERS if score >= threshold)
     reasons = [
         f"Observed count is {round(100 * occupancy)}% of the configured reference capacity"
@@ -37,6 +80,10 @@ def assess(count, capacity, motion, forecast):
         reasons.append("Direction reversals observed in tracked trajectories")
     if sudden > 0.2:
         reasons.append("Fast image-space movement observed")
+    if motion_warning and sudden <= 0.2:
+        reasons.append(
+            "Elevated image-space movement observed across multiple tracked people"
+        )
     if stalled > 0.5 and occupancy > 0.6:
         reasons.append("Low movement with elevated occupancy")
     if growth > 0.1:
@@ -51,7 +98,7 @@ def assess(count, capacity, motion, forecast):
         "tier": tier,
         "reasons": reasons,
         "action": action,
-        "method": "heuristic_v1",
+        "method": "heuristic_v2",
         "is_probability": False,
         "validated_for_safety": False,
     }
