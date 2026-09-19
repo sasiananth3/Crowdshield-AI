@@ -154,14 +154,14 @@ export default function App() {
 
   function syncGlobalAlerts(nextAlerts) {
     setAllAlerts(nextAlerts);
-    if (knownAlertIds.current === null) {
-      knownAlertIds.current = new Set(nextAlerts.map((alert) => alert.id));
-      return;
-    }
-    const fresh = nextAlerts.filter(
-      (alert) =>
-        !alert.acknowledged && !knownAlertIds.current.has(alert.id),
-    );
+    const initialSync = knownAlertIds.current === null;
+    if (initialSync) knownAlertIds.current = new Set();
+    const fresh = initialSync
+      ? nextAlerts.filter((alert) => !alert.acknowledged).slice(0, 1)
+      : nextAlerts.filter(
+          (alert) =>
+            !alert.acknowledged && !knownAlertIds.current.has(alert.id),
+        );
     nextAlerts.forEach((alert) => knownAlertIds.current.add(alert.id));
     if (!fresh.length) return;
     setAlertQueue((current) => {

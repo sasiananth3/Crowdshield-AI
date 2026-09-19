@@ -5,8 +5,10 @@ import numpy as np
 
 
 class MotionAnalyzer:
-    def __init__(self):
+    def __init__(self, dynamics_window_seconds=5.0):
         self.tracks = {}
+        self.dynamics = deque()
+        self.dynamics_window_seconds = dynamics_window_seconds
 
     def update(self, detections, timestamp):
         active = []
@@ -36,11 +38,38 @@ class MotionAnalyzer:
                 velocity = np.zeros(2)
             history.append((timestamp, position, velocity))
         self.tracks = {k: v for k, v in self.tracks.items() if timestamp - v[-1][0] < 5}
+        mean_speed = float(np.mean(speeds)) if speeds else None
+        self.dynamics.append(
+            {
+                "timestamp": timestamp,
+                "count": len(detections),
+                "tracked_people": len(active),
+                "mean_speed_normalized": mean_speed,
+            }
+        )
+        while (
+            self.dynamics
+            and timestamp - self.dynamics[0]["timestamp"]
+            > self.dynamics_window_seconds
+        ):
+            self.dynamics.popleft()
+        recent_peak_count = max(item["count"] for item in self.dynamics)
+        count_drop_fraction = (
+            (recent_peak_count - len(detections)) / recent_peak_count
+            if recent_peak_count
+            else 0.0
+        )
+        group_speeds = [
+            item["mean_speed_normalized"]
+            for item in self.dynamics
+            if item["tracked_people"] >= 3
+            and item["mean_speed_normalized"] is not None
+        ]
         return {
             "motion_available": len(speeds) > 0,
             "tracked_people": len(active),
-            "mean_speed_normalized": round(float(np.mean(speeds)), 4)
-            if speeds
+            "mean_speed_normalized": round(mean_speed, 4)
+            if mean_speed is not None
             else None,
             "stalled_fraction": round(float(np.mean(np.array(speeds) < 0.005)), 3)
             if speeds
@@ -50,5 +79,13 @@ class MotionAnalyzer:
             else 0.0,
             "sudden_motion_fraction": round(float(np.mean(np.array(speeds) > 0.15)), 3)
             if speeds
+            else None,
+            # Trackers can lose identities during rapid dispersal. Keep a short,
+            # time-based count/movement window so that loss of track IDs does not
+            # immediately erase the developing crowd-dynamics signal.
+            "recent_peak_count": recent_peak_count,
+            "count_drop_fraction": round(count_drop_fraction, 3),
+            "recent_group_peak_speed_normalized": round(max(group_speeds), 4)
+            if group_speeds
             else None,
         }

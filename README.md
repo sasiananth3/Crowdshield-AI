@@ -81,7 +81,7 @@ that the footage is dangerous.
 |---|---|
 | Person detection | Official COCO-pretrained YOLOv8n, person class only; ByteTrack IDs |
 | Lightweight density estimation | ImageNet MobileNetV2 frozen features plus a trained dilated-convolution head |
-| Behavioral signals | Track-local speed, stalling and direction-reversal heuristics; optional body-only MediaPipe landmarks |
+| Behavioral signals | Track-local speed, stalling, direction reversals and short-window rapid-dispersal heuristics; optional body-only MediaPipe landmarks |
 | Temporal model | Trained 8-sample-input / 3-second-horizon count LSTM, with persistence and linear baselines |
 | Fusion and warnings | Explicit occupancy/motion/forecast heuristic, four tiers, persistence and cooldown filters |
 | Backend and storage | FastAPI REST/WebSocket API, a bounded CPU worker, SQLite analyses and acknowledged alerts |

@@ -10,6 +10,9 @@ TIERS = [(80, "Critical"), (60, "High"), (35, "Moderate"), (0, "Safe")]
 MIN_MOVING_TRACKS = 3
 FAST_CROWD_SPEED = 0.04
 DISORDERED_CROWD_SPEED = 0.025
+MIN_DISPERSAL_BASELINE = 5
+RAPID_COUNT_DROP_FRACTION = 0.5
+DISPERSAL_PERSISTENCE_SECONDS = 1.0
 
 
 def _motion_warning(motion):
@@ -27,20 +30,43 @@ def _motion_warning(motion):
     )
 
 
+def _rapid_dispersal_warning(motion):
+    """Detect a sharp count loss after recent multi-person movement.
+
+    This complements track-local velocity: rapid movement commonly causes a
+    tracker to lose identities just when the transition is most important.
+    """
+    recent_peak_count = motion.get("recent_peak_count") or 0
+    drop = motion.get("count_drop_fraction") or 0.0
+    recent_group_speed = motion.get("recent_group_peak_speed_normalized") or 0.0
+    return (
+        recent_peak_count >= MIN_DISPERSAL_BASELINE
+        and drop >= RAPID_COUNT_DROP_FRACTION
+        and recent_group_speed >= FAST_CROWD_SPEED
+    )
+
+
 def assess(count, capacity, motion, forecast):
     motion_warning = _motion_warning(motion)
+    dispersal_warning = _rapid_dispersal_warning(motion)
     if not capacity or capacity <= 0:
-        if motion_warning:
+        if motion_warning or dispersal_warning:
+            reason = (
+                "Possible rapid crowd dispersal observed after elevated movement"
+                if dispersal_warning
+                else "Elevated image-space movement observed across multiple tracked people"
+            )
             return {
                 "score": None,
                 "tier": "Moderate",
-                "reasons": [
-                    "Elevated image-space movement observed across multiple tracked people"
-                ],
+                "reasons": [reason],
                 "action": (
                     "Review the video and monitor whether crowd movement is continuing."
                 ),
-                "method": "motion_threshold_v1",
+                "method": "crowd_dynamics_v1",
+                "alert_persistence_seconds": (
+                    DISPERSAL_PERSISTENCE_SECONDS if dispersal_warning else 3.0
+                ),
                 "is_probability": False,
                 "validated_for_safety": False,
             }
@@ -70,7 +96,7 @@ def assess(count, capacity, motion, forecast):
     )
     # A persistent multi-person movement warning must remain alertable even when a
     # generously configured capacity keeps the occupancy contribution low.
-    if motion_warning:
+    if motion_warning or dispersal_warning:
         score = max(35.0, score)
     tier = next(label for threshold, label in TIERS if score >= threshold)
     reasons = [
@@ -83,6 +109,10 @@ def assess(count, capacity, motion, forecast):
     if motion_warning and sudden <= 0.2:
         reasons.append(
             "Elevated image-space movement observed across multiple tracked people"
+        )
+    if dispersal_warning:
+        reasons.append(
+            "Possible rapid crowd dispersal observed after elevated movement"
         )
     if stalled > 0.5 and occupancy > 0.6:
         reasons.append("Low movement with elevated occupancy")
@@ -99,6 +129,9 @@ def assess(count, capacity, motion, forecast):
         "reasons": reasons,
         "action": action,
         "method": "heuristic_v2",
+        "alert_persistence_seconds": (
+            DISPERSAL_PERSISTENCE_SECONDS if dispersal_warning else 3.0
+        ),
         "is_probability": False,
         "validated_for_safety": False,
     }
@@ -126,7 +159,8 @@ class AlertDebouncer:
         escalation = rank.get(tier, 0) > rank.get(previous["last_tier"], 0)
         if (
             severe
-            and timestamp - previous["since"] >= self.persistence
+            and timestamp - previous["since"]
+            >= risk.get("alert_persistence_seconds", self.persistence)
             and (timestamp - previous["last_alert"] >= self.cooldown or escalation)
         ):
             previous["last_alert"], previous["last_tier"] = timestamp, tier

@@ -29,7 +29,7 @@ def test_multi_person_motion_can_warn_without_capacity():
     )
     assert risk["tier"] == "Moderate"
     assert risk["score"] is None
-    assert risk["method"] == "motion_threshold_v1"
+    assert risk["method"] == "crowd_dynamics_v1"
 
 
 def test_single_fast_person_does_not_create_motion_warning():
@@ -69,6 +69,40 @@ def test_alert_requires_persistence_and_allows_escalation():
     assert not engine.update("z", 4, {"tier": "High"})
     assert not engine.update("z", 5, {"tier": "Critical"})
     assert engine.update("z", 8, {"tier": "Critical"})
+
+
+def test_rapid_dispersal_uses_shorter_persistence():
+    engine = AlertDebouncer()
+    risk = {"tier": "Moderate", "alert_persistence_seconds": 1.0}
+    assert not engine.update("z", 17.5, risk)
+    assert not engine.update("z", 18.0, risk)
+    assert engine.update("z", 18.5, risk)
+
+
+def test_motion_window_preserves_dispersal_signal_when_tracks_drop():
+    analyzer = MotionAnalyzer()
+
+    def people(count, offset):
+        return [
+            {
+                "track_id": index + 1,
+                "box": [0.05 * index + offset, 0.1, 0.05 * index + 0.04 + offset, 0.4],
+            }
+            for index in range(count)
+        ]
+
+    analyzer.update(people(6, 0.0), 0.0)
+    analyzer.update(people(6, 0.01), 1.0)
+    analyzer.update(people(6, 0.08), 2.0)
+    motion = analyzer.update(people(2, 0.09), 2.5)
+    risk = assess(2, None, motion, {})
+
+    assert motion["recent_peak_count"] == 6
+    assert motion["count_drop_fraction"] >= 0.5
+    assert motion["recent_group_peak_speed_normalized"] >= 0.04
+    assert risk["tier"] == "Moderate"
+    assert risk["alert_persistence_seconds"] == 1.0
+    assert "dispersal" in risk["reasons"][0].lower()
 
 
 def test_motion_has_unknown_warmup_and_finite_values():

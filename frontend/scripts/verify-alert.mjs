@@ -65,12 +65,30 @@ try {
   await popup.getByText("Abnormal condition warning", { exact: true }).waitFor();
   assert.match(await popup.innerText(), /Main concourse/);
   assert.match(await popup.innerText(), /Critical/i);
+  assert.match(
+    await popup.innerText(),
+    /Observed count exceeds the configured reference capacity/,
+  );
+
+  // A dismissed but unacknowledged warning must return after a reload. This
+  // covers operators opening or refreshing the dashboard after an alert was
+  // already persisted by the backend.
+  await popup
+    .getByRole("button", { name: "Dismiss warning popup" })
+    .click();
+  await popup.waitFor({ state: "hidden" });
+  await page.reload();
+  const restoredPopup = page.getByRole("alertdialog");
+  await restoredPopup.waitFor({ timeout: 10000 });
+  assert.match(await restoredPopup.innerText(), /Main concourse/);
   await page.screenshot({
     path: resolve(root, "reports/browser-alert-popup.png"),
     fullPage: true,
   });
 
-  await popup.getByRole("button", { name: "View alert history" }).click();
+  await restoredPopup
+    .getByRole("button", { name: "View alert history" })
+    .click();
   await page.getByRole("heading", { name: "Alert center" }).waitFor();
   const historyRow = page.locator(".alert-row").filter({ hasText: "Main concourse" });
   await historyRow.waitFor();

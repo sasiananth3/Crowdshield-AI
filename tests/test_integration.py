@@ -21,7 +21,9 @@ def test_real_video_to_models_alerts_and_export(tmp_path):
     clip = tmp_path / "clip.avi"
     cap = cv2.VideoCapture(str(source))
     writer = cv2.VideoWriter(str(clip), cv2.VideoWriter_fourcc(*"MJPG"), 30, (320, 240))
-    for _ in range(450):
+    # Include the first rapid-dispersal transition in the UMN sample so this
+    # end-to-end test covers alert persistence without a configured capacity.
+    for _ in range(600):
         ok, frame = cap.read()
         assert ok
         writer.write(frame)
@@ -43,7 +45,7 @@ def test_real_video_to_models_alerts_and_export(tmp_path):
                         "id": "main",
                         "name": "Test area",
                         "polygon": [[0, 0], [1, 0], [1, 1], [0, 1]],
-                        "capacity": 10,
+                        "capacity": None,
                     }
                 ],
                 "forecast_mode": "lstm",
@@ -68,6 +70,8 @@ def test_real_video_to_models_alerts_and_export(tmp_path):
             assert client.get(url + endpoint).status_code == 200
         alerts = client.get("/api/alerts").json()
         assert alerts
+        assert alerts[0]["method"] == "crowd_dynamics_v1"
+        assert "dispersal" in alerts[0]["reasons"][0].lower()
         assert (
             client.post(f"/api/alerts/{alerts[0]['id']}/acknowledge").status_code == 200
         )
