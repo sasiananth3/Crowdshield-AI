@@ -61,7 +61,9 @@ def test_real_video_to_models_alerts_and_export(tmp_path):
             time.sleep(0.2)
         assert job["status"] == "completed", job.get("error")
         history = client.get(url + "/history").json()
-        assert len(history) == 30
+        # The generated clip is 600 frames / 30 FPS = 20 seconds, sampled at
+        # the API default of 2 FPS.
+        assert len(history) == 40
         assert all(s["density_estimate"] is not None for s in history)
         assert any(s["detected_people"] > 0 for s in history)
         assert history[-1]["zones"][0]["forecast"]["method"] == "count_lstm"

@@ -62,13 +62,42 @@ def test_risk_is_bounded_and_not_probability():
 
 
 def test_alert_requires_persistence_and_allows_escalation():
-    engine = AlertDebouncer()
+    engine = AlertDebouncer(persistence_seconds=3.0)
     assert not engine.update("z", 0, {"tier": "High"})
     assert not engine.update("z", 2, {"tier": "High"})
     assert engine.update("z", 3, {"tier": "High"})
     assert not engine.update("z", 4, {"tier": "High"})
     assert not engine.update("z", 5, {"tier": "Critical"})
     assert engine.update("z", 8, {"tier": "Critical"})
+
+
+def test_default_motion_alert_responds_after_one_and_a_half_seconds():
+    engine = AlertDebouncer()
+    risk = {"tier": "Moderate"}
+    assert not engine.update("z", 20.0, risk)
+    assert not engine.update("z", 20.5, risk)
+    assert not engine.update("z", 21.0, risk)
+    assert engine.update("z", 21.5, risk)
+
+
+def test_brief_tracking_dropout_does_not_reset_alert_persistence():
+    engine = AlertDebouncer()
+    moderate = {"tier": "Moderate"}
+    assert not engine.update("z", 42.5, moderate)
+    assert not engine.update("z", 43.0, moderate)
+    assert not engine.update("z", 43.5, {"tier": "Uncalibrated"})
+    assert engine.update("z", 44.0, moderate)
+
+
+def test_sustained_recovery_rearms_a_new_incident_inside_cooldown():
+    engine = AlertDebouncer(cooldown_seconds=30.0, recovery_seconds=2.0)
+    moderate = {"tier": "Moderate"}
+    assert not engine.update("z", 0.0, moderate)
+    assert engine.update("z", 1.5, moderate)
+    assert not engine.update("z", 2.0, {"tier": "Uncalibrated"})
+    assert not engine.update("z", 4.0, {"tier": "Uncalibrated"})
+    assert not engine.update("z", 10.0, moderate)
+    assert engine.update("z", 11.5, moderate)
 
 
 def test_rapid_dispersal_uses_shorter_persistence():

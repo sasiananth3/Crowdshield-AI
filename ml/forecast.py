@@ -95,7 +95,9 @@ class CountForecaster(TrendForecast):
             "status": "experimental",
             "horizon_seconds": c["horizon"],
             "count": round(max(0, pred * c["std"] + c["mean"]), 1),
-            "training_source": c["source"],
+            # Older bundled checkpoints called this field ``source_csv``.
+            # Keep those checkpoints usable without changing their predictions.
+            "training_source": c.get("source", c.get("source_csv", "unspecified")),
         }
 
 

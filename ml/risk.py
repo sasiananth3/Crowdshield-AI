@@ -13,6 +13,8 @@ DISORDERED_CROWD_SPEED = 0.025
 MIN_DISPERSAL_BASELINE = 5
 RAPID_COUNT_DROP_FRACTION = 0.5
 DISPERSAL_PERSISTENCE_SECONDS = 1.0
+MOTION_PERSISTENCE_SECONDS = 1.5
+ALERT_RECOVERY_SECONDS = 2.0
 
 
 def _motion_warning(motion):
@@ -65,7 +67,9 @@ def assess(count, capacity, motion, forecast):
                 ),
                 "method": "crowd_dynamics_v1",
                 "alert_persistence_seconds": (
-                    DISPERSAL_PERSISTENCE_SECONDS if dispersal_warning else 3.0
+                    DISPERSAL_PERSISTENCE_SECONDS
+                    if dispersal_warning
+                    else MOTION_PERSISTENCE_SECONDS
                 ),
                 "is_probability": False,
                 "validated_for_safety": False,
@@ -130,7 +134,9 @@ def assess(count, capacity, motion, forecast):
         "action": action,
         "method": "heuristic_v2",
         "alert_persistence_seconds": (
-            DISPERSAL_PERSISTENCE_SECONDS if dispersal_warning else 3.0
+            DISPERSAL_PERSISTENCE_SECONDS
+            if dispersal_warning
+            else MOTION_PERSISTENCE_SECONDS
         ),
         "is_probability": False,
         "validated_for_safety": False,
@@ -138,30 +144,81 @@ def assess(count, capacity, motion, forecast):
 
 
 class AlertDebouncer:
-    def __init__(self, persistence_seconds=3.0, cooldown_seconds=30.0):
+    """Turn noisy per-sample risk into incident-level alerts.
+
+    A short non-alertable gap is treated as detector/tracker noise rather than the
+    end of an incident. After a sustained clear interval, the zone is re-armed so
+    a genuinely new incident can alert even if it begins inside the repeat
+    cooldown for the previous incident.
+    """
+
+    def __init__(
+        self,
+        persistence_seconds=MOTION_PERSISTENCE_SECONDS,
+        cooldown_seconds=30.0,
+        recovery_seconds=ALERT_RECOVERY_SECONDS,
+    ):
         self.persistence = persistence_seconds
         self.cooldown = cooldown_seconds
+        self.recovery = recovery_seconds
         self.state = {}
 
     def update(self, zone_id, timestamp, risk):
         tier = risk["tier"]
         previous = self.state.get(zone_id)
-        if previous is None or previous["tier"] != tier:
+        if previous is None:
             previous = {
                 "tier": tier,
-                "since": timestamp,
-                "last_alert": previous["last_alert"] if previous else -math.inf,
-                "last_tier": previous["last_tier"] if previous else "Safe",
+                "active_since": None,
+                "tier_since": timestamp,
+                "clear_since": timestamp,
+                "required_persistence": self.persistence,
+                "last_alert": -math.inf,
+                "last_tier": "Safe",
             }
             self.state[zone_id] = previous
         severe = tier in {"Moderate", "High", "Critical"}
         rank = {"Safe": 0, "Moderate": 1, "High": 2, "Critical": 3}
+
+        if not severe:
+            if previous["clear_since"] is None:
+                previous["clear_since"] = timestamp
+            if timestamp - previous["clear_since"] >= self.recovery:
+                previous.update(
+                    active_since=None,
+                    required_persistence=self.persistence,
+                    last_tier="Safe",
+                )
+            previous["tier"] = tier
+            return False
+
+        required = risk.get("alert_persistence_seconds", self.persistence)
+        if previous["active_since"] is None:
+            previous["active_since"] = timestamp
+            previous["required_persistence"] = required
+        else:
+            # A rapid-dispersal signal is intentionally allowed to shorten the
+            # response time of an already developing motion incident.
+            previous["required_persistence"] = min(
+                previous["required_persistence"], required
+            )
+        if previous["tier"] != tier:
+            previous["tier_since"] = timestamp
+        previous.update(tier=tier, clear_since=None)
+
+        active_ready = (
+            timestamp - previous["active_since"]
+            >= previous["required_persistence"]
+        )
+        cooldown_elapsed = timestamp - previous["last_alert"] >= self.cooldown
+        rearmed = previous["last_tier"] == "Safe"
         escalation = rank.get(tier, 0) > rank.get(previous["last_tier"], 0)
+        escalation_ready = (
+            escalation and timestamp - previous["tier_since"] >= required
+        )
         if (
-            severe
-            and timestamp - previous["since"]
-            >= risk.get("alert_persistence_seconds", self.persistence)
-            and (timestamp - previous["last_alert"] >= self.cooldown or escalation)
+            active_ready
+            and (rearmed or cooldown_elapsed or escalation_ready)
         ):
             previous["last_alert"], previous["last_tier"] = timestamp, tier
             return True

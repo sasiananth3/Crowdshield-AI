@@ -3,6 +3,7 @@
 import copy
 from datetime import datetime, timezone
 import json
+import logging
 from pathlib import Path
 import threading
 import time
@@ -15,6 +16,9 @@ from ml.forecast import create_forecaster
 from ml.kinematics import MotionAnalyzer
 from ml.pose import PoseAnalyzer
 from ml.risk import AlertDebouncer, assess
+
+
+logger = logging.getLogger(__name__)
 
 
 def utcnow():
@@ -168,6 +172,13 @@ class Manager:
 
         torch.set_num_threads(2)
         job = self.jobs[job_id]
+        logger.info(
+            "analysis_started job_id=%s name=%s sample_fps=%s zones=%s",
+            job_id,
+            job.get("name"),
+            job.get("sample_fps"),
+            len(job.get("zones", [])),
+        )
         cap = None
         pose = None
         try:
@@ -265,15 +276,22 @@ class Manager:
                     }
                     zone_results.append(entry)
                     if debouncer.update(zone["id"], timestamp, risk):
-                        self.store.add_alert(
-                            {
-                                "id": uuid.uuid4().hex,
-                                "job_id": job_id,
-                                "zone": zone["name"],
-                                "created_at": utcnow(),
-                                "video_timestamp": round(timestamp, 2),
-                                **risk,
-                            }
+                        alert = {
+                            "id": uuid.uuid4().hex,
+                            "job_id": job_id,
+                            "zone": zone["name"],
+                            "created_at": utcnow(),
+                            "video_timestamp": round(timestamp, 2),
+                            **risk,
+                        }
+                        self.store.add_alert(alert)
+                        logger.warning(
+                            "alert_emitted job_id=%s zone_id=%s tier=%s video_timestamp=%.2f reasons=%s",
+                            job_id,
+                            zone["id"],
+                            risk["tier"],
+                            timestamp,
+                            risk.get("reasons"),
                         )
                 # Do not sum detector and density estimates: they count the same people.
                 sample = {
@@ -370,6 +388,7 @@ class Manager:
                 if job["status"] == "completed":
                     job["progress"] = 100
         except Exception as exc:
+            logger.exception("analysis_failed job_id=%s", job_id)
             with self.lock:
                 job.update(status="failed", error=str(exc))
         finally:
