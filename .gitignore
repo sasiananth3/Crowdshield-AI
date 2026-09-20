@@ -23,5 +23,7 @@ models/*.part
 !models/forecast.pt
 reports/browser-*.png
 test-results/
+tools/node-v26*/
+tools/openclaw/
 *.zip
 .DS_Store

@@ -82,6 +82,26 @@ function Badge({ value }) {
   );
 }
 
+function AlertFrame({ alert, variant }) {
+  if (!alert.frame_available) return null;
+  const source = `/api/alerts/${encodeURIComponent(alert.id)}/frame`;
+  return (
+    <a
+      className={`alert-frame ${variant}`}
+      href={source}
+      target="_blank"
+      rel="noreferrer"
+      aria-label={`Open saved alert frame for ${alert.zone}`}
+    >
+      <img
+        src={source}
+        loading={variant === "history" ? "lazy" : "eager"}
+        alt={`Saved alert frame for ${alert.alert_type || alert.zone}`}
+      />
+    </a>
+  );
+}
+
 function Trend({ history }) {
   if (history.length < 2)
     return (
@@ -776,16 +796,21 @@ export default function App() {
                         type="checkbox"
                         checked={verifyAlerts}
                         disabled={
-                          running || !health?.alert_verifier?.available
+                          running ||
+                          !health?.alert_verifier?.available ||
+                          !health?.alert_verifier?.configured
                         }
                         onChange={(e) => setVerifyAlerts(e.target.checked)}
                       />
                       OpenClaw alert verification <span>Optional</span>
                     </label>
                     <p className="field-help">
-                      {health?.alert_verifier?.available
+                      {health?.alert_verifier?.available &&
+                      health?.alert_verifier?.configured
                         ? "Reviews only debounced warning candidates. Up to three marked video frames are sent to the configured OpenRouter model. Provider failures retain the original warning."
-                        : "OpenClaw CLI is not detected. Install and configure it, then restart CrowdShield to enable external verification."}
+                        : health?.alert_verifier?.available
+                          ? "OpenClaw is installed but its project-local authentication has not been verified. Run python scripts/configure_openclaw.py, then restart CrowdShield."
+                          : "OpenClaw CLI is not detected. Install and configure it, then restart CrowdShield to enable external verification."}
                     </p>
                     {running ? (
                       <button
@@ -1247,6 +1272,7 @@ function AlertPopup({
           <X size={17} />
         </button>
       </div>
+      <AlertFrame alert={alert} variant="popup" />
       <p>{alert.reasons?.join(" · ")}</p>
       <small>{alert.action}</small>
       <div className="alert-popup-meta">
@@ -1282,6 +1308,7 @@ function AlertList({ alerts, onAck }) {
           <div className={`alert-icon ${a.tier.toLowerCase()}`}>
             <AlertTriangle size={18} />
           </div>
+          <AlertFrame alert={a} variant="history" />
           <div className="alert-copy">
             <strong>
               {a.alert_type || a.zone}

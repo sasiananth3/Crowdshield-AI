@@ -73,6 +73,11 @@ def test_real_video_to_models_alerts_and_export(tmp_path):
         alerts = client.get("/api/alerts").json()
         assert alerts
         assert alerts[0]["method"] == "crowd_dynamics_v1"
+        assert alerts[0]["frame_available"] is True
+        assert (
+            client.get(f"/api/alerts/{alerts[0]['id']}/frame").headers["content-type"]
+            == "image/jpeg"
+        )
         assert "dispersal" in alerts[0]["reasons"][0].lower()
         assert (
             client.post(f"/api/alerts/{alerts[0]['id']}/acknowledge").status_code == 200

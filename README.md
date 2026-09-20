@@ -53,7 +53,9 @@ reviewed zone outlined, plus counts, motion features, forecast and rule reasons.
 It cannot change the risk tier. A clear rejection at 85% confidence or higher
 suppresses the popup; an inconclusive, malformed, timed-out or failed review keeps
 the original warning. Every requested review, including a rejection, is retained
-in the `alert_verifications` audit table.
+in the `alert_verifications` audit table. Every displayed warning also retains its
+annotated event frame under `runtime/jobs/<job-id>/alerts/` and shows that frame in
+the popup and alert history.
 
 This feature is opt-in because frames leave the computer and are processed by
 OpenRouter and the selected free-model provider. Install OpenClaw separately (its
@@ -62,18 +64,26 @@ configure an OpenRouter key:
 
 ```powershell
 iwr -useb https://openclaw.ai/install.ps1 | iex
-openclaw models auth login --provider openrouter --method api-key
-openclaw infer model run --local --model openrouter/openrouter/free --prompt "Reply with exactly OK" --json
+python scripts/configure_openclaw.py
 ```
+
+The helper prompts through OpenClaw and never reads or prints the API key itself.
+It keeps the OpenClaw state, credential profile and inference workspace below the
+Git-ignored `runtime/openclaw/` directory. CrowdShield uses OpenClaw's narrow
+`infer model run` vision interface, which does not load agent tools, memory or
+session context. The verifier rejects attachments outside CrowdShield's runtime
+tree and invokes the CLI from the scoped workspace. The OpenClaw executable and
+operating system still exist outside this directory; this is a model/tool boundary,
+not an OS-level sandbox for the executable itself.
 
 Restart CrowdShield after installation, then select **OpenClaw alert
 verification** before starting an analysis. The default OpenClaw model reference
-is `openrouter/openrouter/free`, which selects OpenRouter's free-model router. The
+is `openrouter/free`, which selects OpenRouter's free-model router. The
 following optional environment settings are read when CrowdShield starts:
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `CROWDSHIELD_OPENCLAW_MODEL` | `openrouter/openrouter/free` | OpenClaw provider/model reference |
+| `CROWDSHIELD_OPENCLAW_MODEL` | `openrouter/free` | OpenClaw provider/model reference |
 | `CROWDSHIELD_OPENCLAW_TIMEOUT_SECONDS` | `45` | Per-candidate review timeout (5-180 seconds) |
 | `CROWDSHIELD_OPENCLAW_REJECT_CONFIDENCE` | `0.85` | Minimum confidence required to suppress a popup (0.5-1.0) |
 | `CROWDSHIELD_OPENCLAW_COMMAND` | discovered from `PATH` | Optional explicit OpenClaw executable path |
@@ -228,7 +238,8 @@ Main endpoints: `POST /api/videos`, `POST /api/demo`, `GET /api/jobs`,
 `POST /api/jobs/{id}/start`, `POST /api/jobs/{id}/stop`,
 `GET /api/jobs/{id}/history`, `GET /api/jobs/{id}/frame`,
 `GET /api/jobs/{id}/export`, `GET /api/alerts`,
-`POST /api/alerts/{id}/acknowledge`, `GET /api/alert-verifications`,
+`GET /api/alerts/{id}/frame`, `POST /api/alerts/{id}/acknowledge`,
+`GET /api/alert-verifications`,
 `GET /api/evaluation`,
 and `WS /ws/jobs/{id}`. See `/docs` for request schemas and normalized polygons.
 
@@ -273,7 +284,9 @@ or anonymized**. Uploads, frames, trajectories, counts and alerts stay in the lo
 `runtime/` folder unless the operator explicitly enables OpenClaw verification.
 When enabled, up to three candidate frames are sent through OpenClaw to OpenRouter
 and its selected upstream provider; read their current privacy and retention terms
-before use. There is no automatic local retention/deletion policy. Only process
+before use. Displayed alert snapshots and the project-local OpenClaw credential
+profile remain under `runtime/`; protect that directory. There is no automatic
+local retention/deletion policy. Only process
 authorized footage. Never commit `runtime/` or publish raw data accidentally.
 
 Before claiming improved accuracy: reproduce an appropriate paper baseline on the

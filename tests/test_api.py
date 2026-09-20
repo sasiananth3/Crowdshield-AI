@@ -95,6 +95,35 @@ def test_alerts_persist_and_acknowledge(tmp_path):
     second.close()
 
 
+def test_alert_frame_is_served_from_runtime(client):
+    alert = {
+        "id": "alert-frame-test",
+        "job_id": "job-frame-test",
+        "tier": "High",
+        "frame_available": True,
+    }
+    client.app.state.store.add_alert(alert)
+    folder = client.app.state.manager.runtime / "jobs" / alert["job_id"] / "alerts"
+    folder.mkdir(parents=True)
+    frame = np.full((12, 16, 3), 127, dtype=np.uint8)
+    assert cv2.imwrite(str(folder / f"{alert['id']}.jpg"), frame)
+
+    response = client.get(f"/api/alerts/{alert['id']}/frame")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "image/jpeg"
+    assert response.content.startswith(b"\xff\xd8")
+
+
+def test_missing_alert_frame_returns_404(client):
+    client.app.state.store.add_alert(
+        {"id": "no-frame", "job_id": "job-no-frame", "tier": "Moderate"}
+    )
+
+    assert client.get("/api/alerts/no-frame/frame").status_code == 404
+    assert client.get("/api/alerts/not-an-alert/frame").status_code == 404
+
+
 def test_alert_verification_audit_persists(tmp_path):
     path = tmp_path / "test.sqlite3"
     store = Store(path)

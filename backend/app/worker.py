@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 import json
 import logging
 from pathlib import Path
+import re
 import threading
 import time
 import uuid
@@ -34,7 +35,10 @@ def within(point, polygon):
 class Manager:
     def __init__(self, root, runtime, store):
         self.root, self.runtime, self.store = Path(root), Path(runtime), store
-        self.alert_verifier = OpenClawAlertVerifier()
+        self.alert_verifier = OpenClawAlertVerifier(
+            project_root=self.root,
+            runtime_root=self.runtime,
+        )
         self.lock = threading.RLock()
         self.jobs = {job["id"]: job for job in store.jobs()}
         self.threads = {}
@@ -107,6 +111,7 @@ class Manager:
 
     def _publish_image(self, folder, name, image):
         """Encode and atomically publish an image, retrying transient file locks."""
+        folder.mkdir(parents=True, exist_ok=True)
         target = folder / name
         temporary = folder / f"{target.stem}-next{target.suffix}"
         if not cv2.imwrite(str(temporary), image):
@@ -122,6 +127,63 @@ class Manager:
                 if attempt == 6:
                     raise
                 time.sleep(min(0.01 * (2**attempt), 0.2))
+
+    def _alert_frame_path(self, alert):
+        """Resolve an internally named alert image without accepting path fragments."""
+        job_id = str(alert.get("job_id") or "")
+        alert_id = str(alert.get("id") or "")
+        safe_id = re.compile(r"^[a-zA-Z0-9_-]{1,64}$")
+        if not safe_id.fullmatch(job_id) or not safe_id.fullmatch(alert_id):
+            return None
+        path = (self.runtime / "jobs" / job_id / "alerts" / f"{alert_id}.jpg").resolve()
+        try:
+            path.relative_to(self.runtime.resolve())
+        except ValueError:
+            return None
+        return path
+
+    def alert_frame_bytes(self, alert):
+        path = self._alert_frame_path(alert)
+        if path is None or not path.is_file():
+            return None
+        with self.lock:
+            return path.read_bytes()
+
+    @staticmethod
+    def _render_alert_frame(frame, detections, zone, alert):
+        """Create the durable evidence image shown in alert history."""
+        image = frame.copy()
+        height, width = image.shape[:2]
+        points = (
+            np.array(zone["polygon"]) * np.array([width, height])
+        ).astype(np.int32)
+        cv2.polylines(image, [points], True, (0, 215, 255), 3)
+        for item in detections:
+            x1, y1, x2, y2 = (
+                np.array(item["box"]) * np.array([width, height, width, height])
+            ).astype(int)
+            cv2.rectangle(image, (x1, y1), (x2, y2), (94, 210, 72), 2)
+        label = f"{alert['tier']}: {alert['alert_type']}"
+        cv2.rectangle(image, (0, 0), (width, min(38, height)), (20, 32, 50), -1)
+        cv2.putText(
+            image,
+            label[:80],
+            (10, min(25, height - 5)),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.55,
+            (255, 255, 255),
+            1,
+            cv2.LINE_AA,
+        )
+        return image
+
+    def _save_alert_frame(self, alert, frame, detections, zone):
+        path = self._alert_frame_path(alert)
+        if path is None:
+            return False
+        image = self._render_alert_frame(frame, detections, zone, alert)
+        self._publish_image(path.parent, path.name, image)
+        return True
 
     def start(
         self,
@@ -156,6 +218,10 @@ class Manager:
             if verify_alerts and not self.alert_verifier.available:
                 raise ValueError(
                     "OpenClaw CLI was not found. Install and configure OpenClaw before enabling alert verification."
+                )
+            if verify_alerts and not self.alert_verifier.configured:
+                raise ValueError(
+                    "OpenClaw authentication is not verified. Run python scripts/configure_openclaw.py first."
                 )
             job.update(
                 status="processing",
@@ -371,6 +437,17 @@ class Manager:
                                 }
                             )
                         if verification["display_alert"]:
+                            try:
+                                alert["frame_available"] = self._save_alert_frame(
+                                    alert, frame, selected, zone
+                                )
+                            except (OSError, RuntimeError, cv2.error):
+                                alert["frame_available"] = False
+                                logger.exception(
+                                    "alert_frame_save_failed job_id=%s alert_id=%s",
+                                    job_id,
+                                    alert_id,
+                                )
                             self.store.add_alert(alert)
                             logger.warning(
                                 "alert_emitted job_id=%s zone_id=%s tier=%s type=%s verification=%s video_timestamp=%.2f reasons=%s",

@@ -1,0 +1,29 @@
+0 verbose cli C:\final project\Crowdshield-AI\tools\node-v26.9.0-win-x64\node.exe C:\final project\Crowdshield-AI\tools\node-v26.9.0-win-x64\node_modules\npm\bin\npm-cli.js
+1 info using npm@11.19.1
+2 info using node@v26.9.0
+3 silly config load:file:C:\final project\Crowdshield-AI\tools\node-v26.9.0-win-x64\node_modules\npm\npmrc
+4 silly config load:file:C:\final project\Crowdshield-AI\tools\openclaw\.npmrc
+5 silly config load:file:C:\Users\sasiananth\.npmrc
+6 silly config load:file:C:\final project\Crowdshield-AI\tools\openclaw\etc\npmrc
+7 verbose title npm install openclaw@latest
+8 verbose argv "install" "--prefix" "C:\\final project\\Crowdshield-AI\\tools\\openclaw" "openclaw@latest" "--allow-scripts" "openclaw" "--cache" "C:\\final project\\Crowdshield-AI\\tools\\npm-cache" "--loglevel" "verbose"
+9 verbose logfile logs-max:10 dir:C:\final project\Crowdshield-AI\tools\npm-cache\_logs\2026-09-20T05_02_09_697Z-
+10 verbose logfile C:\final project\Crowdshield-AI\tools\npm-cache\_logs\2026-09-20T05_02_09_697Z-debug-0.log
+11 silly logfile done cleaning log files
+12 verbose stack Error: --allow-scripts is not allowed in project-scoped installs. Add the entries to the "allowScripts" field in package.json, or to .npmrc, instead.
+12 verbose stack     at resolveAllowScripts (C:\final project\Crowdshield-AI\tools\node-v26.9.0-win-x64\node_modules\npm\lib\utils\resolve-allow-scripts.js:118:7)
+12 verbose stack     at Install.exec (C:\final project\Crowdshield-AI\tools\node-v26.9.0-win-x64\node_modules\npm\lib\commands\install.js:147:50)
+12 verbose stack     at C:\final project\Crowdshield-AI\tools\node-v26.9.0-win-x64\node_modules\npm\lib\npm.js:309:81
+12 verbose stack     at Object.start (C:\final project\Crowdshield-AI\tools\node-v26.9.0-win-x64\node_modules\npm\node_modules\proc-log\lib\index.js:101:21)
+12 verbose stack     at Npm.execCommandClass (C:\final project\Crowdshield-AI\tools\node-v26.9.0-win-x64\node_modules\npm\lib\npm.js:308:19)
+12 verbose stack     at async Npm.exec (C:\final project\Crowdshield-AI\tools\node-v26.9.0-win-x64\node_modules\npm\lib\npm.js:193:9)
+12 verbose stack     at async module.exports (C:\final project\Crowdshield-AI\tools\node-v26.9.0-win-x64\node_modules\npm\lib\cli\entry.js:67:5)
+13 error code EALLOWSCRIPTS
+14 error --allow-scripts is not allowed in project-scoped installs. Add the entries to the "allowScripts" field in package.json, or to .npmrc, instead.
+15 verbose cwd C:\final project\Crowdshield-AI
+16 verbose os Windows_NT 10.0.26200
+17 verbose node v26.9.0
+18 verbose npm  v11.19.1
+19 verbose exit 1
+20 verbose code 1
+21 error A complete log of this run can be found in: C:\final project\Crowdshield-AI\tools\npm-cache\_logs\2026-09-20T05_02_09_697Z-debug-0.log

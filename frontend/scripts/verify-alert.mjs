@@ -22,6 +22,7 @@ const alert = {
   reasons: ["Observed count exceeds the configured reference capacity"],
   action: "Ask the responsible operator to review this zone.",
   acknowledged: false,
+  frame_available: true,
 };
 const secondAlert = {
   ...alert,
@@ -51,6 +52,14 @@ try {
     if (message.type() === "error") errors.push(message.text());
   });
   await page.route("**/api/alerts**", async (route) => {
+    if (route.request().url().endsWith("/frame")) {
+      await route.fulfill({
+        status: 200,
+        contentType: "image/svg+xml",
+        body: '<svg xmlns="http://www.w3.org/2000/svg" width="320" height="180"><rect width="320" height="180" fill="#142238"/><rect x="55" y="30" width="210" height="125" fill="none" stroke="#ffd700" stroke-width="4"/></svg>',
+      });
+      return;
+    }
     if (route.request().method() === "POST") {
       acknowledged = true;
       await route.fulfill({ status: 200, contentType: "application/json", body: '{"acknowledged":true}' });
@@ -84,6 +93,7 @@ try {
   assert.match(await popup.innerText(), /Critical/i);
   assert.match(await popup.innerText(), /Crowding \/ capacity/);
   assert.match(await popup.innerText(), /OpenClaw verified/);
+  await popup.getByAltText("Saved alert frame for Crowding / capacity").waitFor();
   assert.match(
     await popup.innerText(),
     /Observed count exceeds the configured reference capacity/,
@@ -115,6 +125,7 @@ try {
   await page.getByRole("heading", { name: "Alert center" }).waitFor();
   const historyRow = page.locator(".alert-row").filter({ hasText: "Main concourse" });
   await historyRow.waitFor();
+  await historyRow.getByAltText("Saved alert frame for Crowding / capacity").waitFor();
   await historyRow.getByRole("button", { name: "Acknowledge", exact: true }).click();
   await historyRow.getByRole("button", { name: "Acknowledged", exact: true }).waitFor();
   assert.equal(acknowledged, true);

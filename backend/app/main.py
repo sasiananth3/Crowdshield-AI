@@ -237,6 +237,20 @@ def create_app(runtime=None):
     def alerts(job_id: str | None = None):
         return store.alerts(job_id)
 
+    @app.get("/api/alerts/{alert_id}/frame")
+    def alert_frame(alert_id: str):
+        alert = store.alert(alert_id)
+        if alert is None:
+            raise HTTPException(404, "Alert not found")
+        content = manager.alert_frame_bytes(alert)
+        if content is None:
+            raise HTTPException(404, "Alert frame not available")
+        return Response(
+            content,
+            media_type="image/jpeg",
+            headers={"Cache-Control": "private, no-store"},
+        )
+
     @app.post("/api/alerts/{alert_id}/acknowledge")
     def acknowledge(alert_id: str):
         if not store.acknowledge(alert_id):

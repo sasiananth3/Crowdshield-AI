@@ -1,4 +1,5 @@
 import json
+import os
 from types import SimpleNamespace
 
 from ml.alert_verifier import OpenClawAlertVerifier, infer_alert_type
@@ -49,6 +50,38 @@ def test_rule_based_type_is_available_without_agent():
     )
 
 
+def test_project_local_smoke_test_marker_controls_configured_state(tmp_path, monkeypatch):
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    verifier = OpenClawAlertVerifier(
+        command="python",
+        runtime_root=tmp_path,
+        project_root=tmp_path,
+    )
+    assert verifier.available is True
+    assert verifier.configured is False
+
+    verifier.verification_marker.write_text("{}", encoding="utf-8")
+
+    assert verifier.configured is True
+
+
+def test_project_local_node_is_added_to_openclaw_path(tmp_path):
+    node_dir = tmp_path / "tools" / "node-v26.8.2-win-x64"
+    node_dir.mkdir(parents=True)
+    (node_dir / "node.exe").write_bytes(b"node")
+    verifier = OpenClawAlertVerifier(
+        command="python",
+        runtime_root=tmp_path / "runtime",
+        project_root=tmp_path,
+        auth_verified=True,
+    )
+
+    environment = verifier._scoped_environment()
+    path_value = next(value for key, value in environment.items() if key.upper() == "PATH")
+
+    assert path_value.split(os.pathsep)[0] == str(node_dir.resolve())
+
+
 def test_openclaw_confirmation_is_normalized(tmp_path):
     frame = tmp_path / "frame.jpg"
     frame.write_bytes(b"jpeg")
@@ -65,14 +98,25 @@ def test_openclaw_confirmation_is_normalized(tmp_path):
             }
         )
 
-    verifier = OpenClawAlertVerifier(command="python", runner=runner)
+    verifier = OpenClawAlertVerifier(
+        command="python",
+        runner=runner,
+        runtime_root=tmp_path,
+        project_root=tmp_path,
+        auth_verified=True,
+    )
     result = verifier.verify(evidence(), [frame])
 
     assert result["status"] == "confirmed"
     assert result["display_alert"] is True
     assert result["provider"] == "openrouter"
-    assert "openrouter/openrouter/free" in calls[0][0]
+    assert "openrouter/free" in calls[0][0]
     assert calls[0][1]["timeout"] == 45
+    assert calls[0][1]["cwd"] == tmp_path / "openclaw" / "workspace"
+    assert calls[0][1]["env"]["OPENCLAW_STATE_DIR"] == str(
+        tmp_path / "openclaw" / "state"
+    )
+    assert calls[0][1]["env"]["TEMP"] == str(tmp_path / "openclaw" / "temp")
 
 
 def test_only_high_confidence_rejection_suppresses_alert(tmp_path):
@@ -90,10 +134,18 @@ def test_only_high_confidence_rejection_suppresses_alert(tmp_path):
         )
 
     high = OpenClawAlertVerifier(
-        command="python", runner=lambda *args, **kwargs: response(0.91)
+        command="python",
+        runner=lambda *args, **kwargs: response(0.91),
+        runtime_root=tmp_path,
+        project_root=tmp_path,
+        auth_verified=True,
     ).verify(evidence(), [frame])
     low = OpenClawAlertVerifier(
-        command="python", runner=lambda *args, **kwargs: response(0.7)
+        command="python",
+        runner=lambda *args, **kwargs: response(0.7),
+        runtime_root=tmp_path,
+        project_root=tmp_path,
+        auth_verified=True,
     ).verify(evidence(), [frame])
 
     assert high["status"] == "rejected"
@@ -112,6 +164,9 @@ def test_bad_openclaw_output_fails_open(tmp_path):
             stdout=json.dumps({"ok": True, "outputs": [{"text": "not json"}]}),
             stderr="",
         ),
+        runtime_root=tmp_path,
+        project_root=tmp_path,
+        auth_verified=True,
     )
 
     result = verifier.verify(evidence(), [frame])
@@ -119,3 +174,28 @@ def test_bad_openclaw_output_fails_open(tmp_path):
     assert result["status"] == "unavailable"
     assert result["display_alert"] is True
     assert result["alert_type"] == "Crowding / capacity"
+
+
+def test_openclaw_cannot_receive_frames_outside_runtime(tmp_path):
+    runtime = tmp_path / "runtime"
+    runtime.mkdir()
+    outside = tmp_path / "outside.jpg"
+    outside.write_bytes(b"jpeg")
+    called = False
+
+    def runner(*args, **kwargs):
+        nonlocal called
+        called = True
+
+    verifier = OpenClawAlertVerifier(
+        command="python",
+        runner=runner,
+        runtime_root=runtime,
+        project_root=tmp_path,
+        auth_verified=True,
+    )
+    result = verifier.verify(evidence(), [outside])
+
+    assert result["status"] == "unavailable"
+    assert result["display_alert"] is True
+    assert called is False

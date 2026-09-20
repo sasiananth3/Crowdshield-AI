@@ -68,6 +68,15 @@ class Store:
                 ).fetchall()
         return [{**json.loads(row[0]), "acknowledged": bool(row[1])} for row in rows]
 
+    def alert(self, alert_id):
+        with self.lock:
+            row = self.db.execute(
+                "SELECT data, acknowledged FROM alerts WHERE id=?", (alert_id,)
+            ).fetchone()
+        if row is None:
+            return None
+        return {**json.loads(row[0]), "acknowledged": bool(row[1])}
+
     def acknowledge(self, alert_id):
         with self.lock, self.db:
             return (

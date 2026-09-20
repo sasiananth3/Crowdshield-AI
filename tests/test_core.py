@@ -244,3 +244,24 @@ def test_frame_publish_retries_transient_windows_lock(tmp_path, monkeypatch):
     assert attempts == 2
     assert manager.frame_bytes("job").startswith(b"\xff\xd8")
     assert not (folder / "frame-next.jpg").exists()
+
+
+def test_alert_frame_is_rendered_and_saved_inside_runtime(tmp_path):
+    manager = Manager.__new__(Manager)
+    manager.runtime = tmp_path
+    manager.lock = threading.RLock()
+    alert = {
+        "id": "alert-1",
+        "job_id": "job-1",
+        "tier": "High",
+        "alert_type": "Crowding / capacity",
+    }
+    frame = np.zeros((120, 160, 3), dtype=np.uint8)
+    zone = {"polygon": [[0.1, 0.1], [0.9, 0.1], [0.9, 0.9], [0.1, 0.9]]}
+    detections = [{"box": [0.2, 0.2, 0.4, 0.8]}]
+
+    assert manager._save_alert_frame(alert, frame, detections, zone)
+    content = manager.alert_frame_bytes(alert)
+
+    assert content.startswith(b"\xff\xd8")
+    assert (tmp_path / "jobs" / "job-1" / "alerts" / "alert-1.jpg").is_file()
